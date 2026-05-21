@@ -35,6 +35,9 @@ htmlcov/
 *.swp
 *.swo
 
+# Claude Code (configurações pessoais locais)
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db
