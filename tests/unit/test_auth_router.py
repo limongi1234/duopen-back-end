@@ -46,7 +46,9 @@ def auth_client():
     mock_db = MagicMock()
     mock_db.table.return_value.select.return_value.eq.return_value.execute.return_value = _ok_result()
     mock_db.table.return_value.insert.return_value.execute.return_value = _ok_result()
-    with patch("app.core.config.get_settings", return_value=make_settings()):
+    with patch("app.core.config.get_settings", return_value=make_settings()), \
+         patch("app.core.database.init_db_engine"), \
+         patch("app.core.database.dispose_db_engine"):
         from app.main import app
         from app.core.database import get_supabase_client
 

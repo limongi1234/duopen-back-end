@@ -29,8 +29,10 @@ def client_with_auth():
     app.dependency_overrides[get_supabase_client] = lambda: mock_db
     app.dependency_overrides[get_current_user] = lambda: FAKE_USER
 
-    with TestClient(app) as c:
-        yield c, mock_db
+    with patch("app.core.database.init_db_engine"), \
+         patch("app.core.database.dispose_db_engine"):
+        with TestClient(app) as c:
+            yield c, mock_db
 
     app.dependency_overrides.pop(get_supabase_client, None)
     app.dependency_overrides.pop(get_current_user, None)
