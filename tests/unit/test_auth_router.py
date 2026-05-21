@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from jose import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 SECRET_KEY = "test-secret-key-for-testing-minimum-32"
 ALGORITHM = "HS256"
@@ -29,14 +29,23 @@ def make_token(sub="user-id", email="test@example.com", expire_minutes=15):
     payload = {
         "sub": sub,
         "email": email,
-        "exp": datetime.utcnow() + timedelta(minutes=expire_minutes),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=expire_minutes),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def _ok_result(data=None):
+    r = MagicMock()
+    r.error = None
+    r.data = data if data is not None else []
+    return r
 
 
 @pytest.fixture
 def auth_client():
     mock_db = MagicMock()
+    mock_db.table.return_value.select.return_value.eq.return_value.execute.return_value = _ok_result()
+    mock_db.table.return_value.insert.return_value.execute.return_value = _ok_result()
     with patch("app.core.config.get_settings", return_value=make_settings()):
         from app.main import app
         from app.core.database import get_supabase_client
@@ -49,10 +58,10 @@ def auth_client():
 
 def test_register_success(auth_client):
     client, db = auth_client
-    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
-    db.table.return_value.insert.return_value.execute.return_value.data = [
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value = _ok_result([])
+    db.table.return_value.insert.return_value.execute.return_value = _ok_result([
         {"id": "uid-1", "email": "novo@test.com", "nome": "Novo"}
-    ]
+    ])
 
     resp = client.post("/api/v1/auth/register", json={
         "email": "novo@test.com", "password": "senha123", "nome": "Novo"
@@ -64,9 +73,9 @@ def test_register_success(auth_client):
 
 def test_register_email_exists(auth_client):
     client, db = auth_client
-    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value = _ok_result([
         {"id": "uid-existing"}
-    ]
+    ])
 
     resp = client.post("/api/v1/auth/register", json={
         "email": "existente@test.com", "password": "senha123", "nome": "Existente"
@@ -80,9 +89,9 @@ def test_login_success(auth_client):
     client, db = auth_client
     from app.core.security import hash_password
     hashed = hash_password("senha123")
-    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
-        {"id": "uid-1", "email": "user@test.com", "password_hash": hashed}
-    ]
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value = _ok_result([
+        {"id": "uid-1", "email": "user@test.com", "senha_hash": hashed}
+    ])
 
     resp = client.post("/api/v1/auth/login", json={
         "email": "user@test.com", "password": "senha123"
@@ -96,7 +105,7 @@ def test_login_success(auth_client):
 
 def test_login_user_not_found(auth_client):
     client, db = auth_client
-    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value = _ok_result([])
 
     resp = client.post("/api/v1/auth/login", json={
         "email": "naoexiste@test.com", "password": "senha123"
@@ -109,9 +118,9 @@ def test_login_wrong_password(auth_client):
     client, db = auth_client
     from app.core.security import hash_password
     hashed = hash_password("senha-correta")
-    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
-        {"id": "uid-1", "email": "user@test.com", "password_hash": hashed}
-    ]
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value = _ok_result([
+        {"id": "uid-1", "email": "user@test.com", "senha_hash": hashed}
+    ])
 
     resp = client.post("/api/v1/auth/login", json={
         "email": "user@test.com", "password": "senha-errada"
@@ -141,11 +150,45 @@ def test_refresh_invalid_token(auth_client):
 
 def test_get_current_user_invalid_token(auth_client):
     client, db = auth_client
-    db.table.return_value.select.return_value.execute.return_value.data = []
+    db.table.return_value.select.return_value.execute.return_value = _ok_result([])
 
     resp = client.get(
         "/api/v1/obras/",
         headers={"Authorization": "Bearer token-invalido"},
     )
+
+    assert resp.status_code == 401
+
+
+def test_me_success(auth_client):
+    client, db = auth_client
+    token = make_token(sub="uid-1", email="user@test.com")
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value = _ok_result([
+        {"id": "uid-1", "email": "user@test.com", "nome": "User"}
+    ])
+
+    resp = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == "uid-1"
+    assert body["email"] == "user@test.com"
+    assert body["nome"] == "User"
+
+
+def test_me_user_not_found(auth_client):
+    client, db = auth_client
+    token = make_token(sub="uid-ghost")
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value = _ok_result([])
+
+    resp = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 404
+
+
+def test_me_invalid_token(auth_client):
+    client, _ = auth_client
+
+    resp = client.get("/api/v1/auth/me", headers={"Authorization": "Bearer token-invalido"})
 
     assert resp.status_code == 401
