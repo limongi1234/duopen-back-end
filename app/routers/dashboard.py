@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends
 from supabase import Client
 from app.core.database import get_supabase_client
@@ -12,10 +14,11 @@ async def resumo_dashboard(
     _: dict = Depends(get_current_user),
 ):
     obras = db.table("obras").select("id, status, valor_contrato").execute()
-    total = len(obras.data)
-    em_andamento = sum(1 for o in obras.data if o["status"] == "em_andamento")
-    concluidas = sum(1 for o in obras.data if o["status"] == "concluida")
-    valor_total = sum(o["valor_contrato"] or 0 for o in obras.data)
+    obras_data: list[dict[str, Any]] = obras.data  # type: ignore[assignment]
+    total = len(obras_data)
+    em_andamento = sum(1 for o in obras_data if o["status"] == "em_andamento")
+    concluidas = sum(1 for o in obras_data if o["status"] == "concluida")
+    valor_total = sum(o["valor_contrato"] or 0 for o in obras_data)
     return {
         "total_obras": total,
         "em_andamento": em_andamento,
