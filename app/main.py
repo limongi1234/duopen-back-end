@@ -1,8 +1,12 @@
+from contextlib import asynccontextmanager
+from typing import Any
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from app.core.config import get_settings
-from app.core.database import check_connection
-from app.routers import auth, obras, contratos, fornecedores, mapa, dashboard, ml, ia
+from app.core.database import check_connection, dispose_db_engine, init_db_engine
+from app.routers import auth, contratos, dashboard, fornecedores, ia, mapa, ml, obras
 import logging
 
 settings = get_settings()
@@ -12,12 +16,21 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
 )
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db_engine()
+    yield
+    await dispose_db_engine()
+
+
 app = FastAPI(
     title="DUOPEN 2026 — API",
     description="Plataforma Inteligente de Análise de Eficiência de Obras Públicas — Macaé/RJ",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -40,10 +53,11 @@ app.include_router(ia.router,           prefix="/api/v1/ia",           tags=["IA
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    db_ok = await check_connection()
+    checks: dict[str, Any] = await check_connection()
+    healthy = all(checks.values())
     return {
-        "status": "ok" if db_ok else "degraded",
-        "database": "connected" if db_ok else "error",
+        "status": "ok" if healthy else "degraded",
+        "checks": {k: ("connected" if v else "error") for k, v in checks.items()},
         "version": "1.0.0",
         "environment": settings.environment,
     }
