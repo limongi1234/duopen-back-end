@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     access_token_expire: int = 15
     refresh_token_expire: int = 10080
 
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
+
     redis_url: str = "redis://localhost:6379/0"
 
     openai_api_key: str
