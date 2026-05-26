@@ -13,6 +13,9 @@ OBRA_FIXTURE = {
     "data_prevista_fim": "2026-12-31",
     "status": "em_andamento",
     "municipio": "Macaé",
+    "secretaria": "Infraestrutura",
+    "bairro": "Centro",
+    "nivel_risco": "baixo",
     "latitude": None,
     "longitude": None,
     "created_at": "2026-01-01T00:00:00",
@@ -40,14 +43,95 @@ def client_with_auth():
 
 # ── Obras ──────────────────────────────────────────────────────────────────────
 
+def _mock_lista(db, data, total=None):
+    mock_result = MagicMock()
+    mock_result.data = data
+    mock_result.count = total if total is not None else len(data)
+    # sem filtros: select().range().execute()
+    db.table.return_value.select.return_value.range.return_value.execute.return_value = mock_result
+    # com filtros: select().eq().range().execute()
+    db.table.return_value.select.return_value.eq.return_value.range.return_value.execute.return_value = mock_result
+    return mock_result
+
+
 def test_listar_obras(client_with_auth):
     client, db = client_with_auth
-    db.table.return_value.select.return_value.execute.return_value.data = [OBRA_FIXTURE]
+    _mock_lista(db, [OBRA_FIXTURE], total=1)
 
     resp = client.get("/api/v1/obras/")
 
     assert resp.status_code == 200
-    assert len(resp.json()) == 1
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["page"] == 1
+    assert body["size"] == 20
+    assert body["pages"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["id"] == "obra-1"
+
+
+def test_listar_obras_paginacao(client_with_auth):
+    client, db = client_with_auth
+    _mock_lista(db, [OBRA_FIXTURE], total=50)
+
+    resp = client.get("/api/v1/obras/?page=2&size=10")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["page"] == 2
+    assert body["size"] == 10
+    assert body["total"] == 50
+    assert body["pages"] == 5
+
+
+def test_listar_obras_filtro_status(client_with_auth):
+    client, db = client_with_auth
+    _mock_lista(db, [OBRA_FIXTURE], total=1)
+
+    resp = client.get("/api/v1/obras/?status=em_andamento")
+
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+
+
+def test_listar_obras_filtro_secretaria(client_with_auth):
+    client, db = client_with_auth
+    _mock_lista(db, [OBRA_FIXTURE], total=1)
+
+    resp = client.get("/api/v1/obras/?secretaria=Infraestrutura")
+
+    assert resp.status_code == 200
+
+
+def test_listar_obras_filtro_bairro(client_with_auth):
+    client, db = client_with_auth
+    _mock_lista(db, [OBRA_FIXTURE], total=1)
+
+    resp = client.get("/api/v1/obras/?bairro=Centro")
+
+    assert resp.status_code == 200
+
+
+def test_listar_obras_filtro_nivel_risco(client_with_auth):
+    client, db = client_with_auth
+    _mock_lista(db, [OBRA_FIXTURE], total=1)
+
+    resp = client.get("/api/v1/obras/?nivel_risco=baixo")
+
+    assert resp.status_code == 200
+
+
+def test_listar_obras_vazia(client_with_auth):
+    client, db = client_with_auth
+    _mock_lista(db, [], total=0)
+
+    resp = client.get("/api/v1/obras/")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 0
+    assert body["pages"] == 1
+    assert body["items"] == []
 
 
 def test_obter_obra_found(client_with_auth):
@@ -58,6 +142,9 @@ def test_obter_obra_found(client_with_auth):
 
     assert resp.status_code == 200
     assert resp.json()["id"] == "obra-1"
+    assert resp.json()["secretaria"] == "Infraestrutura"
+    assert resp.json()["bairro"] == "Centro"
+    assert resp.json()["nivel_risco"] == "baixo"
 
 
 def test_obter_obra_not_found(client_with_auth):
@@ -67,6 +154,48 @@ def test_obter_obra_not_found(client_with_auth):
     resp = client.get("/api/v1/obras/nao-existe")
 
     assert resp.status_code == 404
+
+
+def test_contratos_por_obra(client_with_auth):
+    client, db = client_with_auth
+    contrato = {"id": "cont-1", "obra_id": "obra-1", "valor": 50000.0}
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [contrato]
+
+    resp = client.get("/api/v1/obras/obra-1/contratos")
+
+    assert resp.status_code == 200
+    assert resp.json()[0]["obra_id"] == "obra-1"
+
+
+def test_contratos_por_obra_vazio(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
+
+    resp = client.get("/api/v1/obras/nao-existe/contratos")
+
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_aditivos_por_obra(client_with_auth):
+    client, db = client_with_auth
+    aditivo = {"id": "adit-1", "obra_id": "obra-1", "valor_aditivo": 10000.0}
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [aditivo]
+
+    resp = client.get("/api/v1/obras/obra-1/aditivos")
+
+    assert resp.status_code == 200
+    assert resp.json()[0]["obra_id"] == "obra-1"
+
+
+def test_aditivos_por_obra_vazio(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
+
+    resp = client.get("/api/v1/obras/nao-existe/aditivos")
+
+    assert resp.status_code == 200
+    assert resp.json() == []
 
 
 def test_criar_obra(client_with_auth):
