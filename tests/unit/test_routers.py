@@ -314,6 +314,165 @@ def test_ranking_eficiencia(client_with_auth):
     assert resp.status_code == 200
 
 
+DASHBOARD_FIXTURE = {
+    "total_obras": 42,
+    "valor_total": 5_000_000.0,
+    "media_execucao_pct": 67.5,
+    "obras_em_andamento": 30,
+    "obras_concluidas": 10,
+    "obras_atrasadas": 2,
+}
+
+
+def test_metricas_globais(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.execute.return_value.data = [DASHBOARD_FIXTURE]
+
+    resp = client.get("/api/v1/dashboard/")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total_obras"] == 42
+    assert body["valor_total"] == 5_000_000.0
+    assert body["media_execucao_pct"] == 67.5
+    assert body["obras_atrasadas"] == 2
+
+
+def test_metricas_globais_sem_dados(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.execute.return_value.data = []
+
+    resp = client.get("/api/v1/dashboard/")
+
+    assert resp.status_code == 503
+
+
+def test_distribuicao_status(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.execute.return_value.data = [
+        {"status": "em_andamento", "valor_contrato": 100_000.0},
+        {"status": "em_andamento", "valor_contrato": 80_000.0},
+        {"status": "concluida", "valor_contrato": 50_000.0},
+    ]
+
+    resp = client.get("/api/v1/dashboard/distribuicao-status")
+
+    assert resp.status_code == 200
+    items = {i["label"]: i for i in resp.json()}
+    assert items["em_andamento"]["quantidade"] == 2
+    assert items["em_andamento"]["valor_total"] == 180_000.0
+    assert items["concluida"]["quantidade"] == 1
+
+
+def test_distribuicao_status_campo_nulo(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.execute.return_value.data = [
+        {"status": None, "valor_contrato": 10_000.0},
+    ]
+
+    resp = client.get("/api/v1/dashboard/distribuicao-status")
+
+    assert resp.status_code == 200
+    assert resp.json()[0]["label"] == "indefinido"
+
+
+def test_distribuicao_secretaria(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.execute.return_value.data = [
+        {"secretaria": "Infraestrutura", "valor_contrato": 200_000.0},
+        {"secretaria": "Infraestrutura", "valor_contrato": 100_000.0},
+        {"secretaria": None, "valor_contrato": 50_000.0},
+    ]
+
+    resp = client.get("/api/v1/dashboard/distribuicao-secretaria")
+
+    assert resp.status_code == 200
+    items = {i["label"]: i for i in resp.json()}
+    assert items["Infraestrutura"]["quantidade"] == 2
+    assert items["Não informado"]["quantidade"] == 1
+
+
+def test_evolucao_mensal(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.execute.return_value.data = [
+        {"data_inicio": "2026-01-15", "status": "em_andamento"},
+        {"data_inicio": "2026-01-20", "status": "concluida"},
+        {"data_inicio": "2026-02-05", "status": "em_andamento"},
+        {"data_inicio": None, "status": "em_andamento"},
+    ]
+
+    resp = client.get("/api/v1/dashboard/evolucao")
+
+    assert resp.status_code == 200
+    items = {i["mes"]: i for i in resp.json()}
+    assert items["2026-01"]["iniciadas"] == 2
+    assert items["2026-01"]["concluidas"] == 1
+    assert items["2026-02"]["iniciadas"] == 1
+    assert items["2026-02"]["concluidas"] == 0
+    assert "None" not in items
+
+
+def test_evolucao_mensal_ordenada(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.execute.return_value.data = [
+        {"data_inicio": "2026-03-01", "status": "em_andamento"},
+        {"data_inicio": "2026-01-01", "status": "concluida"},
+        {"data_inicio": "2026-02-01", "status": "em_andamento"},
+    ]
+
+    resp = client.get("/api/v1/dashboard/evolucao")
+
+    meses = [i["mes"] for i in resp.json()]
+    assert meses == sorted(meses)
+
+
+def test_alertas(client_with_auth):
+    client, db = client_with_auth
+    alerta = {
+        "id": "obra-2",
+        "nome": "Obra Crítica",
+        "nivel_risco": "critico",
+        "secretaria": "Infraestrutura",
+        "bairro": "Centro",
+        "valor_contrato": 500_000.0,
+        "data_prevista_fim": "2026-03-01",
+    }
+    (
+        db.table.return_value.select.return_value
+        .in_.return_value.order.return_value.limit.return_value.execute.return_value.data
+    ) = [alerta]
+
+    resp = client.get("/api/v1/dashboard/alertas")
+
+    assert resp.status_code == 200
+    assert resp.json()[0]["nivel_risco"] == "critico"
+
+
+def test_alertas_vazio(client_with_auth):
+    client, db = client_with_auth
+    (
+        db.table.return_value.select.return_value
+        .in_.return_value.order.return_value.limit.return_value.execute.return_value.data
+    ) = []
+
+    resp = client.get("/api/v1/dashboard/alertas")
+
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_alertas_limit(client_with_auth):
+    client, db = client_with_auth
+    (
+        db.table.return_value.select.return_value
+        .in_.return_value.order.return_value.limit.return_value.execute.return_value.data
+    ) = []
+
+    resp = client.get("/api/v1/dashboard/alertas?limit=5")
+
+    assert resp.status_code == 200
+
+
 # ── Fornecedores ──────────────────────────────────────────────────────────────
 
 FORNECEDOR_FIXTURE = {"id": "forn-1", "nome": "Fornecedor A", "cnpj": "00.000.000/0001-00"}
