@@ -27,7 +27,7 @@ async def listar_obras(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
-    query = db.table("mv_obras_resumo").select("*", count="exact")
+    query = db.table("mv_obras_resumo").select("*", count="exact") # pyright: ignore[reportArgumentType]
 
     if obra_status:
         query = query.eq("status", obra_status)
