@@ -475,35 +475,125 @@ def test_alertas_limit(client_with_auth):
 
 # ── Fornecedores ──────────────────────────────────────────────────────────────
 
-FORNECEDOR_FIXTURE = {"id": "forn-1", "nome": "Fornecedor A", "cnpj": "00.000.000/0001-00"}
+FORNECEDOR_FIXTURE = {
+    "cnpj": "12345678000195",
+    "nome": "Fornecedor A",
+    "total_contratos": 5,
+    "valor_total": 500_000.0,
+    "taxa_aditivo": 0.1,
+    "media_prob_atraso": 0.2,
+    "obras_concluidas": 3,
+    "obras_em_andamento": 2,
+}
+
+
+def _mock_ranking(db, data, total=None):
+    mock_result = MagicMock()
+    mock_result.data = data
+    mock_result.count = total if total is not None else len(data)
+    chain = db.table.return_value.select.return_value
+    # sem filtros: select().order().range().execute()
+    chain.order.return_value.range.return_value.execute.return_value = mock_result
+    # com lte: select().lte().order().range().execute()
+    chain.lte.return_value.order.return_value.range.return_value.execute.return_value = mock_result
+    # com dois lte: select().lte().lte().order().range().execute()
+    chain.lte.return_value.lte.return_value.order.return_value.range.return_value.execute.return_value = mock_result
 
 
 def test_listar_fornecedores(client_with_auth):
     client, db = client_with_auth
-    db.table.return_value.select.return_value.execute.return_value.data = [FORNECEDOR_FIXTURE]
+    _mock_ranking(db, [FORNECEDOR_FIXTURE], total=1)
 
     resp = client.get("/api/v1/fornecedores/")
 
     assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["page"] == 1
+    assert body["items"][0]["cnpj"] == "12345678000195"
+
+
+def test_listar_fornecedores_filtro_taxa_aditivo(client_with_auth):
+    client, db = client_with_auth
+    _mock_ranking(db, [FORNECEDOR_FIXTURE], total=1)
+
+    resp = client.get("/api/v1/fornecedores/?taxa_aditivo_max=0.2")
+
+    assert resp.status_code == 200
+
+
+def test_listar_fornecedores_filtro_prob_atraso(client_with_auth):
+    client, db = client_with_auth
+    _mock_ranking(db, [FORNECEDOR_FIXTURE], total=1)
+
+    resp = client.get("/api/v1/fornecedores/?media_prob_atraso_max=0.3")
+
+    assert resp.status_code == 200
+
+
+def test_listar_fornecedores_filtros_combinados(client_with_auth):
+    client, db = client_with_auth
+    _mock_ranking(db, [FORNECEDOR_FIXTURE], total=1)
+
+    resp = client.get("/api/v1/fornecedores/?taxa_aditivo_max=0.2&media_prob_atraso_max=0.3")
+
+    assert resp.status_code == 200
+
+
+def test_listar_fornecedores_paginacao(client_with_auth):
+    client, db = client_with_auth
+    _mock_ranking(db, [FORNECEDOR_FIXTURE], total=40)
+
+    resp = client.get("/api/v1/fornecedores/?page=2&size=10")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["page"] == 2
+    assert body["size"] == 10
+    assert body["total"] == 40
+    assert body["pages"] == 4
 
 
 def test_obter_fornecedor_found(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [FORNECEDOR_FIXTURE]
 
-    resp = client.get("/api/v1/fornecedores/forn-1")
+    resp = client.get("/api/v1/fornecedores/12345678000195")
 
     assert resp.status_code == 200
-    assert resp.json()["id"] == "forn-1"
+    assert resp.json()["cnpj"] == "12345678000195"
+    assert resp.json()["nome"] == "Fornecedor A"
+    assert resp.json()["total_contratos"] == 5
 
 
 def test_obter_fornecedor_not_found(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
 
-    resp = client.get("/api/v1/fornecedores/nao-existe")
+    resp = client.get("/api/v1/fornecedores/99999999000199")
 
     assert resp.status_code == 404
+
+
+def test_obras_do_fornecedor(client_with_auth):
+    client, db = client_with_auth
+    obra_ref = {"obra_id": "obra-1", "obras": {"id": "obra-1", "nome": "Obra A", "status": "em_andamento"}}
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [obra_ref]
+
+    resp = client.get("/api/v1/fornecedores/12345678000195/obras")
+
+    assert resp.status_code == 200
+    assert resp.json()[0]["obra_id"] == "obra-1"
+
+
+def test_obras_do_fornecedor_vazio(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
+
+    resp = client.get("/api/v1/fornecedores/99999999000199/obras")
+
+    assert resp.status_code == 200
+    assert resp.json() == []
 
 
 # ── Mapa ──────────────────────────────────────────────────────────────────────
