@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # Embeddings locais (384 dims) — casa com VECTOR(384) da tabela `embeddings`.
     embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
     google_api_key: Optional[str] = None
-    llm_model: str = "gemini-1.5-flash"
+    llm_model: str = "gemini-2.5-flash-lite"
     rag_top_k: int = 5
     rag_temperature: float = 0.3
 

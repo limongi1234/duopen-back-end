@@ -57,8 +57,9 @@ async def test_consultar_retorna_resposta():
          patch("app.services.rag_service.get_llm", return_value=fake_llm):
         out = await rag.consultar("pergunta?")
 
+    from app.core.config import get_settings
     assert out["resposta"] == "Resposta da IA"
-    assert out["modelo"] == "gemini-1.5-flash"
+    assert out["modelo"] == get_settings().llm_model
 
 
 @pytest.mark.asyncio
