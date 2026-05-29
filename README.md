@@ -250,6 +250,33 @@ pytest -q                       # suíte completa
 pytest --cov=app --cov-report=term-missing   # com cobertura
 ```
 
+## Jobs assíncronos (Celery + Redis)
+
+Tarefas pesadas (re-treino do modelo de risco, geração de embeddings) rodam em
+background via **Celery**, usando **Redis** como broker e result backend
+(`REDIS_URL`), sem bloquear a API.
+
+**Tasks** (em `app/tasks/`):
+| Task | Módulo | Disparada por |
+|---|---|---|
+| `run_ml_retraining` | `ml_tasks.py` | `POST /api/v1/ml/reprocessar` |
+| `run_ml_analysis` | `ml_tasks.py` | `POST /api/v1/ml/analisar` |
+| `generate_embeddings` | `embedding_tasks.py` | `POST /api/v1/ia/embeddings/gerar` |
+
+**Retry automático com backoff exponencial** — em caso de falha, cada task tenta
+novamente com atraso crescente: `2s → 4s → 8s → …` (limitado a 600s), até
+`max_retries=3` (ver `backoff_countdown` em [celery_app.py](app/tasks/celery_app.py)).
+
+**Subir o worker localmente:**
+```bash
+celery -A app.tasks.celery_app worker --loglevel=info
+```
+
+**Monitorar uma task** — todo disparo retorna um `task_id`; consulte o estado em:
+```bash
+GET /api/v1/ml/status/{task_id}   # -> {"task_id": "...", "status": "SUCCESS", "resultado": {...}}
+```
+
 ## Deploy
 
 O `Procfile` define os processos para plataformas como Railway/Heroku:
@@ -258,3 +285,12 @@ O `Procfile` define os processos para plataformas como Railway/Heroku:
 web:    uvicorn app.main:app --host 0.0.0.0 --port $PORT
 worker: celery -A app.tasks.celery_app worker --loglevel=info
 ```
+
+**Railway:**
+1. Adicione o **Redis** como plugin/addon — ele expõe a variável `REDIS_URL`,
+   já consumida por [config.py](app/core/config.py).
+2. Crie dois serviços a partir deste repositório: um **web** (start command do
+   `web`) e um **worker** (start command do `worker`). Ambos compartilham a
+   mesma imagem Docker.
+3. Configure as variáveis de ambiente (`SUPABASE_*`, `DATABASE_URL`,
+   `SECRET_KEY`, `OPENAI_API_KEY`, etc.) em ambos os serviços.

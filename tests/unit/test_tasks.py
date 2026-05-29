@@ -1,6 +1,18 @@
 from unittest.mock import MagicMock
 
 
+def test_backoff_countdown_exponencial():
+    from app.tasks.celery_app import backoff_countdown, RETRY_BACKOFF_MAX
+
+    # 2, 4, 8, 16, ... (base 2, dobrando a cada tentativa)
+    assert backoff_countdown(0) == 2
+    assert backoff_countdown(1) == 4
+    assert backoff_countdown(2) == 8
+    assert backoff_countdown(3) == 16
+    # respeita o teto máximo
+    assert backoff_countdown(100) == RETRY_BACKOFF_MAX
+
+
 def test_run_ml_analysis_success():
     from app.tasks.ml_tasks import run_ml_analysis
 

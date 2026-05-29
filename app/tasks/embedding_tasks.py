@@ -1,4 +1,4 @@
-from app.tasks.celery_app import celery_app
+from app.tasks.celery_app import celery_app, backoff_countdown
 import logging
 
 log = logging.getLogger(__name__)
@@ -12,4 +12,4 @@ def generate_embeddings(self, documento_id: str, texto: str) -> dict:
         return {"documento_id": documento_id, "status": "completed"}
     except Exception as exc:
         log.error(f"Erro ao gerar embeddings: {exc}")
-        raise self.retry(exc=exc)
+        raise self.retry(exc=exc, countdown=backoff_countdown(self.request.retries))
