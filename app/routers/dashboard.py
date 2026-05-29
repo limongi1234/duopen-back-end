@@ -19,32 +19,37 @@ router = APIRouter()
 
 @router.get("/", response_model=DashboardResponse)
 async def metricas_globais(
-    # Aceitos para compatibilidade com o frontend; a view é um agregado global,
-    # portanto o recorte por período ainda não é aplicado aqui.
-    data_inicio: Optional[date] = Query(None),
-    data_fim: Optional[date] = Query(None),
+    data_inicio: Optional[date] = Query(
+        None, description="Considera obras com data de início a partir desta data"
+    ),
+    data_fim: Optional[date] = Query(
+        None, description="Considera obras com data de início até esta data"
+    ),
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
-    result = db.table("mv_dashboard_geral").select("*").execute()
-    if not result.data:
-        raise HTTPException(status_code=503, detail="Dados do dashboard indisponíveis")
-    row: dict[str, Any] = result.data[0]  # type: ignore[assignment]
-
-    atrasadas = (
-        db.table("mv_obras_resumo")
-        .select("id", count="exact")
-        .gt("dias_atraso", 0)
-        .execute()
+    # Calculado a partir da tabela `obras` (fonte confiável e populada) em vez da
+    # mv_dashboard_geral (agregado global potencialmente desatualizado), o que
+    # também habilita o recorte por período.
+    query = db.table("obras").select(
+        "situacao,valor_contrato,percentual_executado,dias_atraso"
     )
+    if data_inicio:
+        query = query.gte("data_inicio", data_inicio.isoformat())
+    if data_fim:
+        query = query.lte("data_inicio", data_fim.isoformat())
+    rows: list[dict[str, Any]] = query.limit(10000).execute().data or []
 
+    execucoes = [
+        r["percentual_executado"] for r in rows if r.get("percentual_executado") is not None
+    ]
     return DashboardResponse(
-        total_obras=row.get("total_obras") or 0,
-        valor_total=row.get("valor_total_contratos") or 0.0,
-        media_execucao_pct=row.get("media_execucao") or 0.0,
-        obras_em_andamento=row.get("obras_em_andamento") or 0,
-        obras_concluidas=row.get("obras_concluidas") or 0,
-        obras_atrasadas=atrasadas.count or 0,
+        total_obras=len(rows),
+        valor_total=float(sum(r.get("valor_contrato") or 0 for r in rows)),
+        media_execucao_pct=round(sum(execucoes) / len(execucoes), 2) if execucoes else 0.0,
+        obras_em_andamento=sum(1 for r in rows if r.get("situacao") == "Em andamento"),
+        obras_concluidas=sum(1 for r in rows if r.get("situacao") == "Concluída"),
+        obras_atrasadas=sum(1 for r in rows if (r.get("dias_atraso") or 0) > 0),
     )
 
 

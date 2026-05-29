@@ -398,42 +398,41 @@ def test_ranking_eficiencia(client_with_auth):
     assert resp.status_code == 200
 
 
-# Espelha a view real mv_dashboard_geral
-DASHBOARD_FIXTURE = {
-    "total_obras": 42,
-    "valor_total_contratos": 5_000_000.0,
-    "media_execucao": 67.5,
-    "obras_em_andamento": 30,
-    "obras_concluidas": 10,
-    "obras_paralisadas": 2,
-    "media_dias_atraso": 12.0,
-    "atualizado_em": "2026-05-07T02:25:07+00:00",
-}
+# Linhas da tabela `obras` (nova fonte do dashboard)
+OBRAS_DASHBOARD_ROWS = [
+    {"situacao": "Em andamento", "valor_contrato": 100000.0, "percentual_executado": 50.0, "dias_atraso": 0},
+    {"situacao": "Concluída", "valor_contrato": 50000.0, "percentual_executado": 100.0, "dias_atraso": 0},
+    {"situacao": "Em andamento", "valor_contrato": 30000.0, "percentual_executado": 0.0, "dias_atraso": 10},
+]
 
 
 def test_metricas_globais(client_with_auth):
     client, db = client_with_auth
-    db.table.return_value.select.return_value.execute.return_value.data = [DASHBOARD_FIXTURE]
-    # 2ª query: contagem de obras atrasadas (dias_atraso > 0)
-    db.table.return_value.select.return_value.gt.return_value.execute.return_value.count = 7
+    db.table.return_value.select.return_value.limit.return_value.execute.return_value.data = OBRAS_DASHBOARD_ROWS
 
     resp = client.get("/api/v1/dashboard/")
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body["total_obras"] == 42
-    assert body["valor_total"] == 5_000_000.0
-    assert body["media_execucao_pct"] == 67.5
-    assert body["obras_atrasadas"] == 7
+    assert body["total_obras"] == 3
+    assert body["valor_total"] == 180000.0
+    assert body["obras_em_andamento"] == 2
+    assert body["obras_concluidas"] == 1
+    assert body["obras_atrasadas"] == 1
+    assert body["media_execucao_pct"] == 50.0  # (50 + 100 + 0) / 3
 
 
 def test_metricas_globais_sem_dados(client_with_auth):
     client, db = client_with_auth
-    db.table.return_value.select.return_value.execute.return_value.data = []
+    db.table.return_value.select.return_value.limit.return_value.execute.return_value.data = []
 
     resp = client.get("/api/v1/dashboard/")
 
-    assert resp.status_code == 503
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total_obras"] == 0
+    assert body["valor_total"] == 0.0
+    assert body["media_execucao_pct"] == 0.0
 
 
 def test_distribuicao_status(client_with_auth):
