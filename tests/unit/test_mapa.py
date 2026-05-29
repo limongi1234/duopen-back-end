@@ -8,9 +8,8 @@ FAKE_USER = {"sub": "test-uid", "email": "test@example.com"}
 OBRA_GEO = {
     "id": "obra-1",
     "nome": "Obra Teste",
-    "status": "em_andamento",
+    "situacao": "Em andamento",
     "nivel_risco": "alto",
-    "secretaria": "Infraestrutura",
     "bairro": "Centro",
     "valor_contrato": 100_000.0,
     "latitude": -22.37,
@@ -168,14 +167,49 @@ def test_filtro_nivel_risco(client_with_auth):
     assert resp.json()["type"] == "FeatureCollection"
 
 
+def _mock_geo_por_ids(db, ids, data):
+    """Mocka o two-step: lookup de IDs na tabela obras + mv_mapa_obras via in_()."""
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+        {"id": i} for i in ids
+    ]
+    db.table.return_value.select.return_value.gte.return_value.lte.return_value.execute.return_value.data = [
+        {"id": i} for i in ids
+    ]
+    (
+        db.table.return_value.select.return_value.not_.is_.return_value.not_.is_.return_value
+        .in_.return_value.execute.return_value.data
+    ) = data
+
+
 def test_filtro_secretaria(client_with_auth):
     client, db = client_with_auth
-    _mock_geo(db, [OBRA_GEO])
+    _mock_geo_por_ids(db, ["obra-1"], [OBRA_GEO])
 
     resp = client.get("/api/v1/mapa/?secretaria=Infraestrutura")
 
     assert resp.status_code == 200
-    assert resp.json()["type"] == "FeatureCollection"
+    assert len(resp.json()["features"]) == 1
+    db.table.return_value.select.return_value.eq.assert_called_with("secretaria", "Infraestrutura")
+
+
+def test_filtro_periodo(client_with_auth):
+    client, db = client_with_auth
+    _mock_geo_por_ids(db, ["obra-1"], [OBRA_GEO])
+
+    resp = client.get("/api/v1/mapa/?data_inicio=2026-04-01&data_fim=2026-05-29")
+
+    assert resp.status_code == 200
+    assert len(resp.json()["features"]) == 1
+
+
+def test_filtro_periodo_sem_resultados(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.gte.return_value.lte.return_value.execute.return_value.data = []
+
+    resp = client.get("/api/v1/mapa/?data_inicio=2026-04-01&data_fim=2026-05-29")
+
+    assert resp.status_code == 200
+    assert resp.json()["features"] == []
 
 
 def test_filtros_combinados(client_with_auth):
