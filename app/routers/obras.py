@@ -18,25 +18,46 @@ router = APIRouter()
 
 @router.get("/", response_model=ObraListResponse)
 async def listar_obras(
-    obra_status: Optional[str] = Query(None, alias="status"),
+    situacao: Optional[str] = Query(None, alias="status"),
     secretaria: Optional[str] = Query(None),
     bairro: Optional[str] = Query(None),
     nivel_risco: Optional[str] = Query(None),
+    sort: Optional[str] = Query(
+        None,
+        description="Campo de ordenação; prefixe '-' para descendente. Ex.: -prob_atraso",
+    ),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
+    limit: Optional[int] = Query(
+        None, ge=1, le=100, description="Atalho: retorna apenas os N primeiros (ignora paginação)"
+    ),
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
-    query = db.table("mv_obras_resumo").select("*", count="exact") # pyright: ignore[reportArgumentType]
+    query = db.table("mv_obras_resumo").select("*", count="exact")  # pyright: ignore[reportArgumentType]
 
-    if obra_status:
-        query = query.eq("status", obra_status)
+    if situacao:
+        query = query.eq("situacao", situacao)
     if secretaria:
         query = query.eq("secretaria", secretaria)
     if bairro:
         query = query.eq("bairro", bairro)
     if nivel_risco:
         query = query.eq("nivel_risco", nivel_risco)
+
+    if sort:
+        descending = sort.startswith("-")
+        campo = sort.lstrip("+-")
+        query = query.order(campo, desc=descending)
+
+    if limit is not None:
+        result = query.limit(limit).execute()
+        return ObraListResponse.build(
+            data=result.data,
+            total=result.count or len(result.data),
+            page=1,
+            size=limit,
+        )
 
     offset = (page - 1) * size
     result = query.range(offset, offset + size - 1).execute()

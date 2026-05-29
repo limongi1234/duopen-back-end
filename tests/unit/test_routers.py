@@ -134,6 +134,36 @@ def test_listar_obras_vazia(client_with_auth):
     assert body["items"] == []
 
 
+def test_listar_obras_sort(client_with_auth):
+    client, db = client_with_auth
+    mock_result = MagicMock()
+    mock_result.data = [OBRA_FIXTURE]
+    mock_result.count = 1
+    db.table.return_value.select.return_value.order.return_value.range.return_value.execute.return_value = mock_result
+
+    resp = client.get("/api/v1/obras/?sort=-prob_atraso")
+
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+    db.table.return_value.select.return_value.order.assert_called_with("prob_atraso", desc=True)
+
+
+def test_listar_obras_limit(client_with_auth):
+    client, db = client_with_auth
+    mock_result = MagicMock()
+    mock_result.data = [OBRA_FIXTURE]
+    mock_result.count = 1
+    db.table.return_value.select.return_value.order.return_value.limit.return_value.execute.return_value = mock_result
+
+    resp = client.get("/api/v1/obras/?sort=-prob_atraso&limit=5")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["size"] == 5
+    assert len(body["items"]) == 1
+    db.table.return_value.select.return_value.order.return_value.limit.assert_called_with(5)
+
+
 def test_obter_obra_found(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [OBRA_FIXTURE]
@@ -314,19 +344,24 @@ def test_ranking_eficiencia(client_with_auth):
     assert resp.status_code == 200
 
 
+# Espelha a view real mv_dashboard_geral
 DASHBOARD_FIXTURE = {
     "total_obras": 42,
-    "valor_total": 5_000_000.0,
-    "media_execucao_pct": 67.5,
+    "valor_total_contratos": 5_000_000.0,
+    "media_execucao": 67.5,
     "obras_em_andamento": 30,
     "obras_concluidas": 10,
-    "obras_atrasadas": 2,
+    "obras_paralisadas": 2,
+    "media_dias_atraso": 12.0,
+    "atualizado_em": "2026-05-07T02:25:07+00:00",
 }
 
 
 def test_metricas_globais(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.select.return_value.execute.return_value.data = [DASHBOARD_FIXTURE]
+    # 2ª query: contagem de obras atrasadas (dias_atraso > 0)
+    db.table.return_value.select.return_value.gt.return_value.execute.return_value.count = 7
 
     resp = client.get("/api/v1/dashboard/")
 
@@ -335,7 +370,7 @@ def test_metricas_globais(client_with_auth):
     assert body["total_obras"] == 42
     assert body["valor_total"] == 5_000_000.0
     assert body["media_execucao_pct"] == 67.5
-    assert body["obras_atrasadas"] == 2
+    assert body["obras_atrasadas"] == 7
 
 
 def test_metricas_globais_sem_dados(client_with_auth):

@@ -1,5 +1,6 @@
 from collections import defaultdict
-from typing import Any
+from datetime import date
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from supabase import Client
@@ -18,13 +19,33 @@ router = APIRouter()
 
 @router.get("/", response_model=DashboardResponse)
 async def metricas_globais(
+    # Aceitos para compatibilidade com o frontend; a view é um agregado global,
+    # portanto o recorte por período ainda não é aplicado aqui.
+    data_inicio: Optional[date] = Query(None),
+    data_fim: Optional[date] = Query(None),
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
     result = db.table("mv_dashboard_geral").select("*").execute()
     if not result.data:
         raise HTTPException(status_code=503, detail="Dados do dashboard indisponíveis")
-    return result.data[0]
+    row: dict[str, Any] = result.data[0]  # type: ignore[assignment]
+
+    atrasadas = (
+        db.table("mv_obras_resumo")
+        .select("id", count="exact")
+        .gt("dias_atraso", 0)
+        .execute()
+    )
+
+    return DashboardResponse(
+        total_obras=row.get("total_obras") or 0,
+        valor_total=row.get("valor_total_contratos") or 0.0,
+        media_execucao_pct=row.get("media_execucao") or 0.0,
+        obras_em_andamento=row.get("obras_em_andamento") or 0,
+        obras_concluidas=row.get("obras_concluidas") or 0,
+        obras_atrasadas=atrasadas.count or 0,
+    )
 
 
 @router.get("/distribuicao-status", response_model=list[DistribuicaoItem])

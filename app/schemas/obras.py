@@ -45,8 +45,32 @@ class ObraDetalheResponse(ObraResponse):
     pass
 
 
+class ObraResumoResponse(BaseModel):
+    """Item da listagem, espelhando a view `mv_obras_resumo`."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    nome: str
+    situacao: Optional[str] = None
+    secretaria: Optional[str] = None
+    bairro: Optional[str] = None
+    nivel_risco: Optional[str] = None
+    valor_contrato: Optional[float] = None
+    data_prevista_fim: Optional[str] = None
+    dias_atraso: Optional[int] = None
+    percentual_executado: Optional[float] = None
+    prob_atraso: Optional[float] = None
+    prob_estouro: Optional[float] = None
+    qtd_aditivos: Optional[int] = None
+    valor_aditivos: Optional[float] = None
+    valor_total_aditivos: Optional[float] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+
 class ObraListResponse(BaseModel):
-    items: list[ObraResponse]
+    items: list[ObraResumoResponse]
     total: int
     page: int
     size: int
