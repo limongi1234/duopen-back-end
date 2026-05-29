@@ -623,15 +623,87 @@ def test_disparar_analise(client_with_auth):
     assert resp.json()["status"] == "queued"
 
 
-def test_obter_predicoes(client_with_auth):
+PREDICAO_FIXTURE = {
+    "id": "pred-1",
+    "id_obra": "obra-1",
+    "prob_atraso": 0.72,
+    "prob_estouro": 0.31,
+    "nivel_risco": "alto",
+    "modelo_versao": "v1.2.0",
+    "atualizado_em": "2026-05-01T12:00:00",
+}
+
+
+def test_listar_predicoes(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.execute.return_value.data = [PREDICAO_FIXTURE]
+
+    resp = client.get("/api/v1/ml/predicoes")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body[0]["id_obra"] == "obra-1"
+    assert body[0]["nivel_risco"] == "alto"
+
+
+def test_listar_predicoes_filtro_nivel_risco(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
-        {"obra_id": "obra-1", "score_eficiencia": 0.85}
+        PREDICAO_FIXTURE
+    ]
+
+    resp = client.get("/api/v1/ml/predicoes?nivel_risco=alto")
+
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+
+
+def test_obter_predicao_found(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+        PREDICAO_FIXTURE
     ]
 
     resp = client.get("/api/v1/ml/predicoes/obra-1")
 
     assert resp.status_code == 200
+    assert resp.json()["prob_atraso"] == 0.72
+
+
+def test_obter_predicao_not_found(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
+
+    resp = client.get("/api/v1/ml/predicoes/inexistente")
+
+    assert resp.status_code == 404
+
+
+def test_reprocessar_modelo(client_with_auth):
+    client, _ = client_with_auth
+    with patch("app.routers.ml.run_ml_retraining") as mock_task:
+        mock_task.delay.return_value.id = "retrain-1"
+
+        resp = client.post("/api/v1/ml/reprocessar")
+
+    assert resp.status_code == 200
+    assert resp.json()["task_id"] == "retrain-1"
+    assert resp.json()["status"] == "queued"
+
+
+def test_status_task(client_with_auth):
+    client, _ = client_with_auth
+    with patch("app.routers.ml.celery_app.AsyncResult") as mock_ar:
+        inst = mock_ar.return_value
+        inst.status = "SUCCESS"
+        inst.successful.return_value = True
+        inst.result = {"status": "completed"}
+
+        resp = client.get("/api/v1/ml/status/retrain-1")
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "SUCCESS"
+    assert resp.json()["resultado"] == {"status": "completed"}
 
 
 # ── IA ────────────────────────────────────────────────────────────────────────

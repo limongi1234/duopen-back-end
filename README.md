@@ -223,8 +223,11 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 ### ML — `/api/v1/ml`
 | Método | Rota | Descrição |
 |---|---|---|
-| POST | `/analisar` | Dispara análise de ML |
-| GET | `/predicoes/{obra_id}` | Predições da obra |
+| GET | `/predicoes` | Lista predições (filtro opcional `nivel_risco`) |
+| GET | `/predicoes/{obra_id}` | Predição de risco (atraso/estouro) de uma obra |
+| POST | `/reprocessar` | Dispara task Celery de re-treinamento do modelo |
+| GET | `/status/{task_id}` | Status da task de re-treinamento |
+| POST | `/analisar` | (compat) Dispara análise de risco de uma obra |
 
 ### IA / RAG — `/api/v1/ia`
 | Método | Rota | Descrição |

@@ -10,6 +10,14 @@ def test_run_ml_analysis_success():
     assert result == {"obra_id": "obra-123", "status": "completed"}
 
 
+def test_run_ml_retraining_success():
+    from app.tasks.ml_tasks import run_ml_retraining
+
+    result = run_ml_retraining()
+
+    assert result == {"status": "completed"}
+
+
 def test_run_ml_analysis_retries_on_error():
     import app.tasks.ml_tasks as ml_module
     from app.tasks.ml_tasks import run_ml_analysis
