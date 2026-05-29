@@ -145,7 +145,7 @@ def test_listar_obras_sort(client_with_auth):
 
     assert resp.status_code == 200
     assert resp.json()["total"] == 1
-    db.table.return_value.select.return_value.order.assert_called_with("prob_atraso", desc=True)
+    db.table.return_value.select.return_value.order.assert_called_with("prob_atraso", desc=True, nullsfirst=False)
 
 
 def test_listar_obras_limit(client_with_auth):
@@ -166,26 +166,26 @@ def test_listar_obras_limit(client_with_auth):
 
 def test_listar_obras_filtro_periodo(client_with_auth):
     client, db = client_with_auth
-    # 1ª query (tabela obras): IDs no período
-    db.table.return_value.select.return_value.gte.return_value.lte.return_value.execute.return_value.data = [
-        {"id": "obra-1"}
-    ]
-    # 2ª query (mv_obras_resumo): filtrada por in_ e paginada
     mock_result = MagicMock()
     mock_result.data = [OBRA_FIXTURE]
     mock_result.count = 1
-    db.table.return_value.select.return_value.in_.return_value.range.return_value.execute.return_value = mock_result
+    # período filtra direto na view: select().gte().lte().range().execute()
+    db.table.return_value.select.return_value.gte.return_value.lte.return_value.range.return_value.execute.return_value = mock_result
 
     resp = client.get("/api/v1/obras/?data_inicio=2026-04-01&data_fim=2026-05-29")
 
     assert resp.status_code == 200
     assert resp.json()["total"] == 1
-    db.table.return_value.select.return_value.in_.assert_called_with("id", ["obra-1"])
+    db.table.return_value.select.return_value.gte.assert_called_with("data_inicio", "2026-04-01")
+    db.table.return_value.select.return_value.gte.return_value.lte.assert_called_with("data_inicio", "2026-05-29")
 
 
 def test_listar_obras_periodo_sem_resultados(client_with_auth):
     client, db = client_with_auth
-    db.table.return_value.select.return_value.gte.return_value.lte.return_value.execute.return_value.data = []
+    mock_result = MagicMock()
+    mock_result.data = []
+    mock_result.count = 0
+    db.table.return_value.select.return_value.gte.return_value.lte.return_value.range.return_value.execute.return_value = mock_result
 
     resp = client.get("/api/v1/obras/?data_inicio=2026-04-01&data_fim=2026-05-29")
 

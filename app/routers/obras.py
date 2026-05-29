@@ -57,7 +57,7 @@ def _listar_de_obras(
         campo = sort.lstrip("+-")
         campo = _SORT_FALLBACK_MAP.get(campo, campo)
         if campo in _OBRAS_SORTABLE:
-            query = query.order(campo, desc=descending)
+            query = query.order(campo, desc=descending, nullsfirst=False)
 
     if limit is not None:
         result = query.limit(limit).execute()
@@ -95,23 +95,12 @@ async def listar_obras(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
-    # O recorte por período usa `obras.data_inicio` (ausente na view); buscamos os
-    # IDs no período e filtramos a mv_obras_resumo (que tem os campos de risco) por eles.
-    ids_no_periodo: Optional[list[str]] = None
-    if data_inicio or data_fim:
-        periodo = db.table("obras").select("id")
-        if data_inicio:
-            periodo = periodo.gte("data_inicio", data_inicio.isoformat())
-        if data_fim:
-            periodo = periodo.lte("data_inicio", data_fim.isoformat())
-        ids_no_periodo = [row["id"] for row in (periodo.execute().data or [])]
-        if not ids_no_periodo:
-            return ObraListResponse.build(data=[], total=0, page=page, size=limit or size)
-
     query = db.table("mv_obras_resumo").select("*", count="exact")  # pyright: ignore[reportArgumentType]
 
-    if ids_no_periodo is not None:
-        query = query.in_("id", ids_no_periodo)
+    if data_inicio:
+        query = query.gte("data_inicio", data_inicio.isoformat())
+    if data_fim:
+        query = query.lte("data_inicio", data_fim.isoformat())
     if situacao:
         query = query.eq("situacao", situacao)
     if secretaria:
@@ -124,7 +113,8 @@ async def listar_obras(
     if sort:
         descending = sort.startswith("-")
         campo = sort.lstrip("+-")
-        query = query.order(campo, desc=descending)
+        # nullsfirst=False: obras sem predição não lideram o ranking de risco.
+        query = query.order(campo, desc=descending, nullsfirst=False)
 
     try:
         if limit is not None:
