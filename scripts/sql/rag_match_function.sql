@@ -11,6 +11,14 @@
 -- `id`, `content`, `metadata`, `similarity`. Por isso expomos chunk_texto AS content.
 -- ─────────────────────────────────────────────────────────────────────────────
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PASSO 0 · Alinhar a dimensão do vetor para 384 (stack gratuita HF MiniLM)
+-- O banco veio com VECTOR(1536) (setup OpenAI original). Como a tabela está
+-- vazia, dá para alterar com segurança. Se houver índice na coluna, derrube antes.
+-- ─────────────────────────────────────────────────────────────────────────────
+DROP INDEX IF EXISTS embeddings_vetor_hnsw;
+ALTER TABLE embeddings ALTER COLUMN vetor TYPE vector(384);
+
 CREATE OR REPLACE FUNCTION match_documentos(
     query_embedding VECTOR(384),
     match_count     INT   DEFAULT 5,
