@@ -164,6 +164,60 @@ def test_listar_obras_limit(client_with_auth):
     db.table.return_value.select.return_value.order.return_value.limit.assert_called_with(5)
 
 
+def test_listar_obras_filtro_periodo(client_with_auth):
+    client, db = client_with_auth
+    # 1ª query (tabela obras): IDs no período
+    db.table.return_value.select.return_value.gte.return_value.lte.return_value.execute.return_value.data = [
+        {"id": "obra-1"}
+    ]
+    # 2ª query (mv_obras_resumo): filtrada por in_ e paginada
+    mock_result = MagicMock()
+    mock_result.data = [OBRA_FIXTURE]
+    mock_result.count = 1
+    db.table.return_value.select.return_value.in_.return_value.range.return_value.execute.return_value = mock_result
+
+    resp = client.get("/api/v1/obras/?data_inicio=2026-04-01&data_fim=2026-05-29")
+
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+    db.table.return_value.select.return_value.in_.assert_called_with("id", ["obra-1"])
+
+
+def test_listar_obras_periodo_sem_resultados(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.gte.return_value.lte.return_value.execute.return_value.data = []
+
+    resp = client.get("/api/v1/obras/?data_inicio=2026-04-01&data_fim=2026-05-29")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 0
+    assert body["items"] == []
+
+
+def test_listar_obras_fallback_mv_nao_populada(client_with_auth):
+    from postgrest.exceptions import APIError
+
+    client, db = client_with_auth
+    mv_err = APIError({
+        "message": 'materialized view "mv_obras_resumo" has not been populated',
+        "code": "55000", "hint": "Use the REFRESH MATERIALIZED VIEW command.", "details": None,
+    })
+    fallback_result = MagicMock()
+    fallback_result.data = [OBRA_FIXTURE]
+    fallback_result.count = 1
+    # 1ª execução (view) estoura 55000; 2ª (fallback em obras) retorna dados
+    db.table.return_value.select.return_value.range.return_value.execute.side_effect = [
+        mv_err, fallback_result
+    ]
+
+    resp = client.get("/api/v1/obras/")
+
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+    assert resp.json()["items"][0]["id"] == "obra-1"
+
+
 def test_obter_obra_found(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [OBRA_FIXTURE]
