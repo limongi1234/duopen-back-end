@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Mapping, Optional, cast
 
 from fastapi import APIRouter, Depends, Query
 from supabase import Client
@@ -41,21 +41,29 @@ async def obras_geojson(
 
     result = query.execute()
 
-    features = [
-        GeoJSONFeature(
-            geometry=GeoJSONPoint(coordinates=[o["longitude"], o["latitude"]]),
-            properties=ObraProperties(
-                id=o["id"],
-                nome=o["nome"],
-                status=o["status"],
-                nivel_risco=o.get("nivel_risco"),
-                secretaria=o.get("secretaria"),
-                bairro=o.get("bairro"),
-                valor_contrato=o["valor_contrato"],
-            ),
+    features = []
+    for o in result.data or []:
+        row = cast(Mapping[str, Any], o)
+        longitude = float(row["longitude"])
+        latitude = float(row["latitude"])
+        nivel_risco = row.get("nivel_risco")
+        secretaria = row.get("secretaria")
+        bairro = row.get("bairro")
+
+        features.append(
+            GeoJSONFeature(
+                geometry=GeoJSONPoint(coordinates=[longitude, latitude]),
+                properties=ObraProperties(
+                    id=str(row["id"]),
+                    nome=str(row["nome"]),
+                    status=str(row["status"]),
+                    nivel_risco=str(nivel_risco) if nivel_risco is not None else None,
+                    secretaria=str(secretaria) if secretaria is not None else None,
+                    bairro=str(bairro) if bairro is not None else None,
+                    valor_contrato=float(row["valor_contrato"]),
+                ),
+            )
         )
-        for o in result.data
-    ]
 
     return GeoJSONFeatureCollection(features=features)
 
