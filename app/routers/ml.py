@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from supabase import Client
 
 from app.core.database import get_supabase_client
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, require_perfil
 from app.schemas.ml import (
     MLAnalysisRequest,
     MLAnalysisResponse,
@@ -42,7 +42,7 @@ async def obter_predicao(
 
 
 @router.post("/reprocessar", response_model=TaskStatusResponse)
-async def reprocessar_modelo(_: dict = Depends(get_current_user)):
+async def reprocessar_modelo(_: dict = Depends(require_perfil("admin"))):
     task = run_ml_retraining.delay()
     return TaskStatusResponse(task_id=task.id, status="queued")
 

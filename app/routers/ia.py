@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
-from app.routers.auth import get_current_user
+from app.routers.auth import require_perfil
 from app.schemas.ml import EmbeddingRequest, RAGQuery, RAGResponse
 from app.services.rag_service import RAGService
 from app.tasks.embedding_tasks import generate_embeddings
@@ -15,7 +15,7 @@ router = APIRouter()
 @router.post("/consulta", response_model=RAGResponse)
 async def consultar(
     body: RAGQuery,
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_perfil("admin", "gestor")),
 ):
     return await RAGService().query(body.pergunta, obra_id=body.obra_id, top_k=body.top_k)
 
@@ -25,7 +25,7 @@ async def consultar_stream(
     pergunta: str = Query(..., min_length=1, description="Pergunta em linguagem natural"),
     obra_id: Optional[str] = Query(None),
     top_k: int = Query(5, ge=1, le=20),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_perfil("admin", "gestor")),
 ):
     service = RAGService()
 
@@ -40,7 +40,7 @@ async def consultar_stream(
 @router.post("/embeddings/gerar")
 async def gerar_embeddings(
     body: EmbeddingRequest,
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_perfil("admin")),
 ):
     task = generate_embeddings.delay(body.documento_id, body.texto)
     return {"task_id": task.id, "status": "queued"}

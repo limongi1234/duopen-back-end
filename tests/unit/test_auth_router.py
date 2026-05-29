@@ -71,6 +71,10 @@ def test_register_success(auth_client):
 
     assert resp.status_code == 201
     assert resp.json()["email"] == "novo@test.com"
+    # novo usuário nasce com menor privilégio
+    assert resp.json()["perfil"] == "readonly"
+    # perfil enviado ao insert é readonly (não aceita escalada via body)
+    assert db.table.return_value.insert.call_args[0][0]["perfil"] == "readonly"
 
 
 def test_register_email_exists(auth_client):
@@ -166,7 +170,7 @@ def test_me_success(auth_client):
     client, db = auth_client
     token = make_token(sub="uid-1", email="user@test.com")
     db.table.return_value.select.return_value.eq.return_value.execute.return_value = _ok_result([
-        {"id": "uid-1", "email": "user@test.com", "nome": "User"}
+        {"id": "uid-1", "email": "user@test.com", "nome": "User", "perfil": "gestor"}
     ])
 
     resp = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
@@ -176,6 +180,7 @@ def test_me_success(auth_client):
     assert body["id"] == "uid-1"
     assert body["email"] == "user@test.com"
     assert body["nome"] == "User"
+    assert body["perfil"] == "gestor"
 
 
 def test_me_user_not_found(auth_client):

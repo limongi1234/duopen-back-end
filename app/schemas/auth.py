@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel, EmailStr
 
 
@@ -26,3 +28,4 @@ class UserResponse(BaseModel):
     id: str
     email: str
     nome: str
+    perfil: Optional[str] = None

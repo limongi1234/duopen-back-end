@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
-FAKE_USER = {"sub": "test-uid", "email": "test@example.com"}
+FAKE_USER = {"sub": "test-uid", "email": "test@example.com", "perfil": "admin"}
 
 OBRA_FIXTURE = {
     "id": "obra-1",
@@ -741,6 +741,34 @@ def test_status_task(client_with_auth):
     assert resp.json()["resultado"] == {"status": "completed"}
 
 
+def _override_perfil(perfil: str):
+    """Sobrescreve get_current_user para simular um usuário com dado perfil."""
+    from app.main import app
+    from app.routers.auth import get_current_user
+
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "u", "email": "u@test.com", "perfil": perfil
+    }
+
+
+def test_reprocessar_readonly_403(client_with_auth):
+    client, _ = client_with_auth
+    _override_perfil("readonly")
+
+    resp = client.post("/api/v1/ml/reprocessar")
+
+    assert resp.status_code == 403
+
+
+def test_reprocessar_gestor_403(client_with_auth):
+    client, _ = client_with_auth
+    _override_perfil("gestor")
+
+    resp = client.post("/api/v1/ml/reprocessar")
+
+    assert resp.status_code == 403
+
+
 # ── IA ────────────────────────────────────────────────────────────────────────
 
 def test_consultar_ia(client_with_auth):
@@ -760,6 +788,30 @@ def test_consultar_ia(client_with_auth):
     assert resp.status_code == 200
     assert resp.json()["resposta"] == "A obra está dentro do prazo."
     assert resp.json()["fontes"][0]["metadata"]["id_contrato"] == "c1"
+
+
+def test_consultar_ia_readonly_403(client_with_auth):
+    client, _ = client_with_auth
+    _override_perfil("readonly")
+
+    resp = client.post("/api/v1/ia/consulta", json={"pergunta": "Qualquer pergunta?"})
+
+    assert resp.status_code == 403
+
+
+def test_consultar_ia_gestor_ok(client_with_auth):
+    from unittest.mock import AsyncMock
+    from app.schemas.ml import RAGResponse
+
+    client, _ = client_with_auth
+    _override_perfil("gestor")
+    with patch("app.routers.ia.RAGService") as mock_service_cls:
+        mock_service_cls.return_value.query = AsyncMock(
+            return_value=RAGResponse(resposta="ok", fontes=[])
+        )
+        resp = client.post("/api/v1/ia/consulta", json={"pergunta": "Pergunta do gestor?"})
+
+    assert resp.status_code == 200
 
 
 def test_consultar_ia_stream(client_with_auth):

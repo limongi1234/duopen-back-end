@@ -46,6 +46,8 @@ async def register(body: UserCreate, db: Client = Depends(get_supabase_client)):
             "email": body.email,
             "senha_hash": hash_password(body.password),
             "nome": body.nome,
+            # Menor privilégio por padrão; admin/gestor são definidos no banco.
+            "perfil": "readonly",
         }).execute(),
         "insert user",
     )
@@ -53,13 +55,18 @@ async def register(body: UserCreate, db: Client = Depends(get_supabase_client)):
         user: dict[str, Any] = result.data[0]  # type: ignore[assignment]
     else:
         created = _ensure_ok(
-            db.table("usuarios").select("id,email,nome").eq("email", body.email).execute(),
+            db.table("usuarios").select("id,email,nome,perfil").eq("email", body.email).execute(),
             "fetch created user",
         )
         if not created.data:
             raise HTTPException(status_code=500, detail="Erro ao criar usuário")
         user = created.data[0]  # type: ignore[assignment]
-    return UserResponse(id=user["id"], email=user["email"], nome=user["nome"])
+    return UserResponse(
+        id=user["id"],
+        email=user["email"],
+        nome=user["nome"],
+        perfil=user.get("perfil", "readonly"),
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -73,7 +80,7 @@ async def login(body: LoginRequest, db: Client = Depends(get_supabase_client)):
     user: dict[str, Any] = result.data[0]  # type: ignore[assignment]
     if not verify_password(body.password, str(user["senha_hash"])):
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
-    payload = {"sub": user["id"], "email": user["email"]}
+    payload = {"sub": user["id"], "email": user["email"], "perfil": user.get("perfil")}
     return TokenResponse(
         access_token=create_access_token(payload),
         refresh_token=create_refresh_token(payload),
@@ -86,7 +93,7 @@ async def refresh(body: RefreshRequest):
         payload = decode_token(body.refresh_token)
     except Exception:
         raise HTTPException(status_code=401, detail="Refresh token inválido")
-    data = {"sub": payload["sub"], "email": payload["email"]}
+    data = {"sub": payload["sub"], "email": payload["email"], "perfil": payload.get("perfil")}
     return TokenResponse(
         access_token=create_access_token(data),
         refresh_token=create_refresh_token(data),
@@ -100,16 +107,38 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer)
         raise HTTPException(status_code=401, detail="Token inválido ou expirado")
 
 
+def require_perfil(*perfis_permitidos: str):
+    """Dependência que autoriza apenas usuários cujo `perfil` está na lista.
+
+    Regras do projeto:
+      - admin    → acesso total (inclui disparar re-treinamento de ML)
+      - gestor   → dashboard e consultas RAG
+      - readonly → apenas visualização (sem RAG)
+    """
+
+    def checker(user: dict = Depends(get_current_user)) -> dict:
+        if user.get("perfil") not in perfis_permitidos:
+            raise HTTPException(
+                status_code=403,
+                detail="Seu perfil não tem permissão para esta ação",
+            )
+        return user
+
+    return checker
+
+
 @router.get("/me", response_model=UserResponse)
 async def me(
     db: Client = Depends(get_supabase_client),
     user: dict = Depends(get_current_user),
 ):
     result = _ensure_ok(
-        db.table("usuarios").select("id,email,nome").eq("id", user["sub"]).execute(),
+        db.table("usuarios").select("id,email,nome,perfil").eq("id", user["sub"]).execute(),
         "fetch current user",
     )
     if not result.data:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     row: dict[str, Any] = result.data[0]  # type: ignore[assignment]
-    return UserResponse(id=row["id"], email=row["email"], nome=row["nome"])
+    return UserResponse(
+        id=row["id"], email=row["email"], nome=row["nome"], perfil=row.get("perfil")
+    )
