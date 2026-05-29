@@ -66,16 +66,60 @@ app/
    cp .env.example .env
    ```
 
-   | Variável | Descrição |
-   |---|---|
-   | `SUPABASE_URL` / `SUPABASE_KEY` | Credenciais do projeto Supabase (service_role) |
-   | `DATABASE_URL` | Postgres direto via SQLAlchemy async (`postgresql+asyncpg://...`) |
-   | `SECRET_KEY` | Segredo do JWT (mín. 32 caracteres) |
-   | `ALGORITHM` | Algoritmo JWT (default `HS256`) |
-   | `ACCESS_TOKEN_EXPIRE` / `REFRESH_TOKEN_EXPIRE` | Expiração dos tokens (minutos) |
-   | `REDIS_URL` | Broker do Celery |
-   | `OPENAI_API_KEY` / `EMBEDDING_MODEL` | IA Generativa / embeddings |
-   | `LOG_LEVEL` / `ENVIRONMENT` / `CORS_ORIGINS` | Configuração da aplicação |
+   | Variável | Obrigatória? | Descrição |
+   |---|:---:|---|
+   | `SUPABASE_URL` | ✅ | URL da **API REST** do projeto Supabase (`https://<ref>.supabase.co`) |
+   | `SUPABASE_KEY` | ✅ | Chave do Supabase (service_role) |
+   | `SECRET_KEY` | ✅ | Segredo do JWT (mín. 32 caracteres) |
+   | `DATABASE_URL` | ⬜ | Conexão **Postgres direta** via SQLAlchemy (`postgresql+asyncpg://...`). **≠ SUPABASE_URL** — é a string de conexão do banco, usada só no check do `/health`. Sem ela, o app funciona via REST. |
+   | `GOOGLE_API_KEY` | ⬜* | Chave do Gemini (AI Studio). *Obrigatória só para o RAG (`/api/v1/ia/*`). |
+   | `LLM_MODEL` / `EMBEDDING_MODEL` | ⬜ | Modelo do Gemini / modelo de embeddings HF (têm default) |
+   | `RAG_TOP_K` / `RAG_TEMPERATURE` / `HF_CACHE_FOLDER` | ⬜ | Ajustes do RAG |
+   | `REDIS_URL` | ⬜ | Broker do Celery (default `redis://localhost:6379/0`) |
+   | `ALGORITHM` / `ACCESS_TOKEN_EXPIRE` / `REFRESH_TOKEN_EXPIRE` | ⬜ | JWT (têm default) |
+   | `LOG_LEVEL` / `ENVIRONMENT` / `CORS_ORIGINS` | ⬜ | Configuração da aplicação |
+
+   > **`DATABASE_URL` não é o `SUPABASE_URL`.** `SUPABASE_URL` é o endpoint REST
+   > (PostgREST); `DATABASE_URL` é a conexão Postgres direta
+   > (`db.<ref>.supabase.co:5432`). O projeto usa principalmente o REST, então
+   > `DATABASE_URL` é opcional para desenvolvimento.
+
+---
+
+## Rodando localmente do zero (passo a passo)
+
+Pré-requisito: **Python 3.11+** e **internet** (a app fala com o Supabase na nuvem;
+não precisa de Postgres local).
+
+```bash
+# 1. Ambiente virtual + dependências (puxa torch/sentence-transformers, ~1GB)
+python -m venv .venv
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# 2. Variáveis de ambiente
+cp .env.example .env
+#   Edite o .env e preencha no mínimo: SUPABASE_URL, SUPABASE_KEY, SECRET_KEY
+#   (e GOOGLE_API_KEY se for usar o RAG)
+
+# 3a. Só a API + testes:
+uvicorn app.main:app --reload        # API em http://localhost:8000/docs
+pytest -q                            # 128 testes, todos mockados (não precisam de Redis/Google/banco)
+
+# 3b. Stack completo (API + Redis + worker Celery) num comando só:
+./scripts/run_local.sh               # Ctrl+C encerra tudo
+```
+
+O [scripts/run_local.sh](scripts/run_local.sh) sobe **Redis (via redislite, sem Docker/sudo)**,
+o **worker Celery** e a **API** juntos — útil para exercitar os jobs assíncronos
+(re-treino ML, geração de embeddings) e o RAG.
+
+| Quero… | Preciso de |
+|---|---|
+| Rodar **testes** | venv + deps + `.env` (SUPABASE_*, SECRET_KEY) |
+| Subir a **API** (obras/dashboard/mapa/auth) | idem + internet/Supabase |
+| **Jobs** (ML / embeddings) | + Redis + worker Celery (ou `run_local.sh`) |
+| **RAG / consulta IA** | + `GOOGLE_API_KEY` (modelo HF baixa no 1º uso, ~420MB) |
 
 ---
 
