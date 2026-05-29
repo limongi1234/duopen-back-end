@@ -1,9 +1,13 @@
+from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
+    model_config = SettingsConfigDict(
+        env_file=".env", case_sensitive=False, extra="ignore"
+    )
 
     supabase_url: str
     supabase_key: str
@@ -17,8 +21,16 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
 
-    openai_api_key: str
-    embedding_model: str = "text-embedding-3-small"
+    # ── IA / RAG (stack gratuita: HuggingFace local + Gemini) ──────────────────
+    # Embeddings locais (384 dims) — casa com VECTOR(384) da tabela `embeddings`.
+    embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
+    google_api_key: Optional[str] = None
+    llm_model: str = "gemini-1.5-flash"
+    rag_top_k: int = 5
+    rag_temperature: float = 0.3
+
+    # Mantido opcional para compatibilidade; a stack de IA não usa mais OpenAI.
+    openai_api_key: Optional[str] = None
 
     log_level: str = "INFO"
     environment: str = "development"

@@ -13,10 +13,14 @@ asyncpg>=0.29
 python-jose[cryptography]>=3.3
 passlib[bcrypt]>=1.7
 
-# IA Generativa e RAG
+# IA Generativa e RAG (stack gratuita: HuggingFace local + Gemini)
 langchain>=0.2
-langchain-openai>=0.1
 langchain-community>=0.2
+langchain-google-genai>=1.0
+langchain-huggingface>=0.1
+sentence-transformers>=3.0
+pgvector>=0.3
+psycopg2-binary>=2.9
 
 # Jobs assíncronos
 celery[redis]>=5.4

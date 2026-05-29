@@ -17,9 +17,26 @@ logging.basicConfig(
 )
 
 
+def _warmup_embeddings() -> None:
+    """Pré-carrega o modelo de embedding (~420MB) fora do event loop."""
+    try:
+        from app.services.rag_service import get_embeddings
+
+        get_embeddings()
+        logging.getLogger(__name__).info("Modelo de embedding pré-carregado")
+    except Exception as exc:  # warmup é best-effort; não derruba o startup
+        logging.getLogger(__name__).warning("Falha no warmup de embeddings: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+
     init_db_engine()
+    # Aquece o modelo de embedding em background (evita ~30s na 1ª consulta RAG).
+    # Só quando o RAG está configurado (evita baixar ~420MB em dev/testes sem key).
+    if settings.google_api_key:
+        asyncio.get_event_loop().run_in_executor(None, _warmup_embeddings)
     yield
     await dispose_db_engine()
 

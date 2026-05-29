@@ -49,28 +49,53 @@ def test_run_ml_analysis_retries_on_error():
     mock_log.error.assert_called_once()
 
 
-def test_generate_embeddings_success():
-    from app.tasks.embedding_tasks import generate_embeddings
+def test_task_gerar_embeddings_success():
+    from unittest.mock import patch
+    import app.tasks.embedding_tasks as emb
 
-    result = generate_embeddings("doc-456", "conteúdo do documento")
+    client = MagicMock()
+    docs_tbl = MagicMock()
+    docs_tbl.select.return_value.execute.return_value.data = []  # nada indexado ainda
+    docs_tbl.insert.return_value.execute.return_value.data = [{"id": "doc1"}]
+    contratos_tbl = MagicMock()
+    contratos_tbl.select.return_value.execute.return_value.data = [
+        {"id": "c1", "objeto": "Obra X", "modalidade": "Pregão",
+         "situacao": "Em andamento", "valor_global": 100.0, "valor_final": 90.0}
+    ]
+    emb_tbl = MagicMock()
+    client.table.side_effect = lambda name: {
+        "documentos_rag": docs_tbl, "contratos": contratos_tbl, "embeddings": emb_tbl
+    }[name]
 
-    assert result == {"documento_id": "doc-456", "status": "completed"}
+    model = MagicMock()
+    model.encode.return_value.tolist.return_value = [0.1] * 384
+    splitter = MagicMock()
+    splitter.split_text.return_value = ["chunk1"]
+
+    with patch("app.tasks.embedding_tasks.get_supabase_client", return_value=client), \
+         patch("sentence_transformers.SentenceTransformer", return_value=model), \
+         patch("langchain_text_splitters.RecursiveCharacterTextSplitter", return_value=splitter):
+        result = emb.task_gerar_embeddings()
+
+    assert result == {"status": "ok", "chunks": 1}
+    emb_tbl.insert.assert_called_once()
 
 
-def test_generate_embeddings_retries_on_error():
-    import app.tasks.embedding_tasks as emb_module
-    from app.tasks.embedding_tasks import generate_embeddings
+def test_task_gerar_embeddings_retries_on_error():
+    from unittest.mock import patch
+    import app.tasks.embedding_tasks as emb
 
     mock_log = MagicMock()
-    mock_log.info.side_effect = RuntimeError("forced error")
-    original_log = emb_module.log
-    emb_module.log = mock_log
-
+    original_log = emb.log
+    emb.log = mock_log
+    # get_supabase_client é chamado antes de instanciar o modelo → sem download.
     try:
-        generate_embeddings("doc-456", "texto")
+        with patch("app.tasks.embedding_tasks.get_supabase_client",
+                   side_effect=RuntimeError("forced error")):
+            emb.task_gerar_embeddings()
     except Exception:
         pass
     finally:
-        emb_module.log = original_log
+        emb.log = original_log
 
     mock_log.error.assert_called_once()

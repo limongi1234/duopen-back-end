@@ -231,15 +231,21 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 
 ### IA / RAG — `/api/v1/ia`
 Agente de IA generativa com RAG (LangChain + pgvector/Supabase) sobre contratos e obras.
+**Stack gratuita:** embeddings locais HuggingFace `paraphrase-multilingual-MiniLM-L12-v2`
+(384 dims) + LLM **Gemini 1.5 Flash** (Google AI Studio).
 
-| Método | Rota | Descrição |
-|---|---|---|
-| POST | `/consulta` | Consulta em linguagem natural — resposta completa + fontes |
-| GET | `/consulta/stream` | Mesma consulta com streaming via Server-Sent Events (`pergunta`, `obra_id?`, `top_k`) |
-| POST | `/embeddings/gerar` | Dispara task Celery de geração de embeddings |
+| Método | Rota | Perfil | Descrição |
+|---|---|---|---|
+| POST | `/consulta` | admin, gestor | Consulta em linguagem natural → `{"resposta", "modelo"}` |
+| GET | `/consulta/stream` | admin, gestor | Mesma consulta com streaming SSE (`?pergunta=...`) |
+| POST | `/embeddings/gerar` | admin | Dispara task Celery que indexa contratos sem embedding |
+| GET | `/warmup` | autenticado | Pré-aquece o modelo de embedding (~420MB) |
 
-> Requer, no Supabase, a tabela `documentos_rag` (pgvector) e a função SQL de similaridade
-> `match_documentos_rag`, além de `OPENAI_API_KEY` configurada.
+**Pré-requisitos para rodar o RAG:**
+1. `GOOGLE_API_KEY` no `.env` (gere em [aistudio.google.com](https://aistudio.google.com)).
+2. Rodar [scripts/sql/rag_match_function.sql](scripts/sql/rag_match_function.sql) no Supabase
+   (cria a função `match_documentos` + índice HNSW; exige `embeddings.vetor` como `VECTOR(384)`).
+3. Popular os embeddings: `POST /api/v1/ia/embeddings/gerar` (ou rodar a task no worker).
 
 ---
 

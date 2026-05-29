@@ -1,121 +1,129 @@
-from typing import Any, AsyncIterator, Optional
 import logging
+from typing import AsyncGenerator
 
-from langchain_classic.chains import RetrievalQA
 from langchain_community.vectorstores import SupabaseVectorStore
-from langchain_core.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_huggingface import HuggingFaceEmbeddings
 
 from app.core.config import get_settings
 from app.core.database import get_supabase_client
-from app.schemas.ml import RAGResponse
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("services.rag")
 
-# Tabela de documentos vetorizados e função SQL de similaridade (pgvector).
+# Função SQL criada na migration de RAG (ver scripts/sql/rag_match_function.sql).
+MATCH_FUNCTION = "match_documentos"
 DOCUMENTOS_TABLE = "documentos_rag"
-MATCH_FUNCTION = "match_documentos_rag"
 
-CHAT_MODEL = "gpt-4o-mini"
-
-PROMPT_TEMPLATE = """Você é um assistente especializado em análise de obras públicas e \
-contratos da Prefeitura de Macaé/RJ. Responda à pergunta do usuário **exclusivamente** com \
-base no contexto fornecido abaixo, em português claro, técnico e objetivo.
-
-Regras:
-- Use apenas as informações do contexto. Não invente dados, valores ou prazos.
-- Se a resposta não estiver no contexto, responda que não há informação suficiente nos \
-documentos disponíveis.
-- Quando citar valores, prazos ou fornecedores, seja específico.
-
-Contexto:
-{context}
-
-Pergunta: {question}
-
-Resposta:"""
+# ── Singletons — inicializados uma vez (evita recarregar o modelo ~420MB) ──────
+_embeddings: HuggingFaceEmbeddings | None = None
+_llm: ChatGoogleGenerativeAI | None = None
+_vector_store: SupabaseVectorStore | None = None
 
 
-class RAGService:
-    """Agente de IA generativa com RAG sobre contratos e obras (LangChain + pgvector)."""
-
-    def __init__(self) -> None:
-        self.settings = get_settings()
-
-    # ── componentes LangChain (isolados para facilitar mock/teste) ────────────
-    def _embeddings(self) -> OpenAIEmbeddings:
-        return OpenAIEmbeddings(
-            model=self.settings.embedding_model,
-            api_key=self.settings.openai_api_key,
+def get_embeddings() -> HuggingFaceEmbeddings:
+    global _embeddings
+    if _embeddings is None:
+        settings = get_settings()
+        _embeddings = HuggingFaceEmbeddings(
+            model_name=settings.embedding_model,
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"normalize_embeddings": True},
+            cache_folder="/app/.cache/huggingface",
         )
+    return _embeddings
 
-    def _llm(self, streaming: bool = False) -> ChatOpenAI:
-        return ChatOpenAI(
-            model=CHAT_MODEL,
-            temperature=0,
-            streaming=streaming,
-            api_key=self.settings.openai_api_key,
+
+def get_llm() -> ChatGoogleGenerativeAI:
+    global _llm
+    if _llm is None:
+        settings = get_settings()
+        _llm = ChatGoogleGenerativeAI(
+            model=settings.llm_model,
+            google_api_key=settings.google_api_key,
+            temperature=settings.rag_temperature,
+            convert_system_message_to_human=True,
         )
+    return _llm
 
-    def _vector_store(self) -> SupabaseVectorStore:
-        return SupabaseVectorStore(
+
+def get_vector_store() -> SupabaseVectorStore:
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = SupabaseVectorStore(
             client=get_supabase_client(),
-            embedding=self._embeddings(),
+            embedding=get_embeddings(),
             table_name=DOCUMENTOS_TABLE,
             query_name=MATCH_FUNCTION,
         )
+    return _vector_store
 
-    def _retriever(self, top_k: int = 5, obra_id: Optional[str] = None):
-        search_kwargs: dict[str, Any] = {"k": top_k}
-        if obra_id:
-            search_kwargs["filter"] = {"id_obra": obra_id}
-        return self._vector_store().as_retriever(search_kwargs=search_kwargs)
 
-    def _prompt(self) -> PromptTemplate:
-        return PromptTemplate(
-            template=PROMPT_TEMPLATE, input_variables=["context", "question"]
+# ── Prompt em português contextualizado para obras de Macaé ────────────────────
+PROMPT = ChatPromptTemplate.from_template(
+    """Você é um assistente especializado em análise de obras públicas do \
+município de Macaé, Rio de Janeiro.
+
+Responda à pergunta do gestor com base EXCLUSIVAMENTE nos trechos de contratos \
+e dados de obras fornecidos abaixo. Se a informação não estiver no contexto, \
+diga claramente que não encontrou dados suficientes para responder. Nunca \
+invente dados ou números.
+
+Responda em português brasileiro, de forma clara e objetiva. Use dados e \
+valores reais quando disponíveis no contexto.
+
+CONTEXTO:
+{context}
+
+PERGUNTA:
+{question}
+
+RESPOSTA:"""
+)
+
+
+def _formatar_contexto(docs) -> str:
+    return "\n\n---\n\n".join(d.page_content for d in docs)
+
+
+async def consultar(pergunta: str) -> dict:
+    """Executa consulta RAG e retorna a resposta completa."""
+    try:
+        top_k = get_settings().rag_top_k
+        retriever = get_vector_store().as_retriever(
+            search_type="similarity", search_kwargs={"k": top_k}
         )
-
-    def _build_chain(
-        self, top_k: int = 5, obra_id: Optional[str] = None, streaming: bool = False
-    ) -> RetrievalQA:
-        return RetrievalQA.from_chain_type(
-            llm=self._llm(streaming=streaming),
-            chain_type="stuff",
-            retriever=self._retriever(top_k=top_k, obra_id=obra_id),
-            return_source_documents=True,
-            chain_type_kwargs={"prompt": self._prompt()},
+        chain = (
+            {"context": retriever | _formatar_contexto, "question": RunnablePassthrough()}
+            | PROMPT
+            | get_llm()
+            | StrOutputParser()
         )
+        resposta = await chain.ainvoke(pergunta)
+        return {"resposta": resposta, "modelo": get_settings().llm_model}
+    except Exception as e:
+        log.error("Erro RAG consultar(): %s", e)
+        return {
+            "resposta": "Não foi possível processar sua consulta. Tente novamente.",
+            "modelo": None,
+        }
 
-    # ── API pública ───────────────────────────────────────────────────────────
-    async def query(
-        self, pergunta: str, obra_id: Optional[str] = None, top_k: int = 5
-    ) -> RAGResponse:
-        """Consulta RAG com resposta completa e documentos-fonte."""
-        log.info("RAG query: %s... obra_id=%s", pergunta[:50], obra_id)
-        chain = self._build_chain(top_k=top_k, obra_id=obra_id)
-        result = await chain.ainvoke({"query": pergunta})
 
-        fontes = [
-            {
-                "conteudo": getattr(doc, "page_content", ""),
-                "metadata": getattr(doc, "metadata", {}),
-            }
-            for doc in result.get("source_documents", [])
-        ]
-        return RAGResponse(resposta=result.get("result", ""), fontes=fontes)
+async def consultar_stream(pergunta: str) -> AsyncGenerator[str, None]:
+    """Executa consulta RAG com streaming da resposta (SSE)."""
+    try:
+        top_k = get_settings().rag_top_k
+        docs = get_vector_store().similarity_search(pergunta, k=top_k)
+        contexto = _formatar_contexto(docs)
+        msgs = PROMPT.format_messages(context=contexto, question=pergunta)
 
-    async def stream(
-        self, pergunta: str, obra_id: Optional[str] = None, top_k: int = 5
-    ) -> AsyncIterator[str]:
-        """Recupera contexto e transmite a resposta token a token (para SSE)."""
-        log.info("RAG stream: %s... obra_id=%s", pergunta[:50], obra_id)
-        retriever = self._retriever(top_k=top_k, obra_id=obra_id)
-        docs = await retriever.ainvoke(pergunta)
-        contexto = "\n\n".join(getattr(d, "page_content", "") for d in docs)
-        prompt = self._prompt().format(context=contexto, question=pergunta)
-
-        async for chunk in self._llm(streaming=True).astream(prompt):
-            token = getattr(chunk, "content", "") or ""
-            if token:
-                yield token
+        async for chunk in get_llm().astream(msgs):
+            if chunk.content:
+                yield f"data: {chunk.content}\n\n"
+        yield "data: [DONE]\n\n"
+    except Exception as e:
+        log.error("Erro RAG streaming: %s", e)
+        yield "data: Erro ao processar a consulta.\n\n"
+        yield "data: [DONE]\n\n"

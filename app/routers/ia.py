@@ -1,46 +1,50 @@
-import json
-from typing import Optional
-
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
-from app.routers.auth import require_perfil
-from app.schemas.ml import EmbeddingRequest, RAGQuery, RAGResponse
-from app.services.rag_service import RAGService
-from app.tasks.embedding_tasks import generate_embeddings
+from app.routers.auth import get_current_user, require_perfil
+from app.services.rag_service import consultar, consultar_stream, get_embeddings
 
 router = APIRouter()
 
 
-@router.post("/consulta", response_model=RAGResponse)
-async def consultar(
-    body: RAGQuery,
+class ConsultaRequest(BaseModel):
+    pergunta: str
+
+
+@router.post("/consulta")
+async def post_consulta(
+    body: ConsultaRequest,
     _: dict = Depends(require_perfil("admin", "gestor")),
 ):
-    return await RAGService().query(body.pergunta, obra_id=body.obra_id, top_k=body.top_k)
+    """Consulta RAG completa — retorna JSON com a resposta."""
+    return await consultar(body.pergunta)
 
 
 @router.get("/consulta/stream")
-async def consultar_stream(
-    pergunta: str = Query(..., min_length=1, description="Pergunta em linguagem natural"),
-    obra_id: Optional[str] = Query(None),
-    top_k: int = Query(5, ge=1, le=20),
+async def get_consulta_stream(
+    pergunta: str,
     _: dict = Depends(require_perfil("admin", "gestor")),
 ):
-    service = RAGService()
-
-    async def event_stream():
-        async for token in service.stream(pergunta, obra_id=obra_id, top_k=top_k):
-            yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    """Consulta RAG com streaming (SSE) — token a token."""
+    return StreamingResponse(
+        consultar_stream(pergunta),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/embeddings/gerar")
-async def gerar_embeddings(
-    body: EmbeddingRequest,
-    _: dict = Depends(require_perfil("admin")),
-):
-    task = generate_embeddings.delay(body.documento_id, body.texto)
-    return {"task_id": task.id, "status": "queued"}
+async def post_gerar_embeddings(_: dict = Depends(require_perfil("admin"))):
+    """Dispara a task Celery que indexa os contratos ainda sem embedding."""
+    from app.tasks.embedding_tasks import task_gerar_embeddings
+
+    task = task_gerar_embeddings.delay()
+    return {"task_id": task.id, "status": "enqueued"}
+
+
+@router.get("/warmup")
+async def get_warmup(_: dict = Depends(get_current_user)):
+    """Pré-aquece o modelo de embedding (evita ~30s na 1ª consulta)."""
+    get_embeddings()
+    return {"status": "ok", "modelo": get_embeddings().model_name}

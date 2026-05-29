@@ -826,21 +826,16 @@ def test_reprocessar_gestor_403(client_with_auth):
 
 def test_consultar_ia(client_with_auth):
     from unittest.mock import AsyncMock
-    from app.schemas.ml import RAGResponse
 
     client, _ = client_with_auth
-    with patch("app.routers.ia.RAGService") as mock_service_cls:
-        mock_service_cls.return_value.query = AsyncMock(
-            return_value=RAGResponse(
-                resposta="A obra está dentro do prazo.",
-                fontes=[{"conteudo": "trecho", "metadata": {"id_contrato": "c1"}}],
-            )
-        )
+    with patch("app.routers.ia.consultar", new=AsyncMock(
+        return_value={"resposta": "A obra está dentro do prazo.", "modelo": "gemini-1.5-flash"}
+    )):
         resp = client.post("/api/v1/ia/consulta", json={"pergunta": "Qual a eficiência da obra?"})
 
     assert resp.status_code == 200
     assert resp.json()["resposta"] == "A obra está dentro do prazo."
-    assert resp.json()["fontes"][0]["metadata"]["id_contrato"] == "c1"
+    assert resp.json()["modelo"] == "gemini-1.5-flash"
 
 
 def test_consultar_ia_readonly_403(client_with_auth):
@@ -854,14 +849,12 @@ def test_consultar_ia_readonly_403(client_with_auth):
 
 def test_consultar_ia_gestor_ok(client_with_auth):
     from unittest.mock import AsyncMock
-    from app.schemas.ml import RAGResponse
 
     client, _ = client_with_auth
     _override_perfil("gestor")
-    with patch("app.routers.ia.RAGService") as mock_service_cls:
-        mock_service_cls.return_value.query = AsyncMock(
-            return_value=RAGResponse(resposta="ok", fontes=[])
-        )
+    with patch("app.routers.ia.consultar", new=AsyncMock(
+        return_value={"resposta": "ok", "modelo": "gemini-1.5-flash"}
+    )):
         resp = client.post("/api/v1/ia/consulta", json={"pergunta": "Pergunta do gestor?"})
 
     assert resp.status_code == 200
@@ -870,28 +863,44 @@ def test_consultar_ia_gestor_ok(client_with_auth):
 def test_consultar_ia_stream(client_with_auth):
     client, _ = client_with_auth
 
-    async def fake_stream(pergunta, obra_id=None, top_k=5):
-        for token in ["Olá", " mundo"]:
-            yield token
+    async def fake_stream(pergunta):
+        yield "data: Olá\n\n"
+        yield "data: [DONE]\n\n"
 
-    with patch("app.routers.ia.RAGService") as mock_service_cls:
-        mock_service_cls.return_value.stream = fake_stream
+    with patch("app.routers.ia.consultar_stream", new=fake_stream):
         resp = client.get("/api/v1/ia/consulta/stream?pergunta=teste")
 
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/event-stream")
-    assert '"token": "Olá"' in resp.text
+    assert "data: Olá" in resp.text
     assert "[DONE]" in resp.text
+
+
+def test_consultar_ia_stream_readonly_403(client_with_auth):
+    client, _ = client_with_auth
+    _override_perfil("readonly")
+
+    resp = client.get("/api/v1/ia/consulta/stream?pergunta=teste")
+
+    assert resp.status_code == 403
 
 
 def test_gerar_embeddings(client_with_auth):
     client, _ = client_with_auth
-    with patch("app.routers.ia.generate_embeddings") as mock_task:
+    with patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task:
         mock_task.delay.return_value.id = "emb-task-1"
 
-        resp = client.post("/api/v1/ia/embeddings/gerar", json={
-            "documento_id": "doc-1", "texto": "Texto do documento"
-        })
+        resp = client.post("/api/v1/ia/embeddings/gerar")
 
     assert resp.status_code == 200
     assert resp.json()["task_id"] == "emb-task-1"
+    assert resp.json()["status"] == "enqueued"
+
+
+def test_gerar_embeddings_readonly_403(client_with_auth):
+    client, _ = client_with_auth
+    _override_perfil("readonly")
+
+    resp = client.post("/api/v1/ia/embeddings/gerar")
+
+    assert resp.status_code == 403
