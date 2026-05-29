@@ -118,10 +118,65 @@ Base: `/api/v1`. As rotas de domínio exigem autenticação via **Bearer token**
 ### Auth — `/api/v1/auth`
 | Método | Rota | Descrição |
 |---|---|---|
-| POST | `/register` | Cadastro de usuário |
+| POST | `/register` | Cadastro de usuário ([detalhes](#criação-de-usuário--post-apiv1authregister)) |
 | POST | `/login` | Login → access + refresh token |
 | POST | `/refresh` | Renova o access token |
 | GET | `/me` | Dados do usuário autenticado |
+
+#### Criação de usuário — `POST /api/v1/auth/register`
+
+Cria um novo usuário na tabela `usuarios`. A senha **nunca** é armazenada em texto
+puro — é gravada já com hash bcrypt (`senha_hash`). Endpoint **público** (não exige
+autenticação).
+
+**Request body** (`application/json`)
+
+| Campo | Tipo | Obrigatório | Descrição |
+|---|---|:---:|---|
+| `email` | string (email) | ✅ | E-mail do usuário. Validado como e-mail e deve ser único. |
+| `password` | string | ✅ | Senha em texto puro — convertida em hash bcrypt no servidor. |
+| `nome` | string | ✅ | Nome do usuário. |
+
+```json
+{
+  "email": "joao@exemplo.com",
+  "password": "senha-super-secreta",
+  "nome": "João Silva"
+}
+```
+
+**Resposta `201 Created`** — `UserResponse` (não retorna a senha):
+
+```json
+{
+  "id": "uuid-do-usuario",
+  "email": "joao@exemplo.com",
+  "nome": "João Silva"
+}
+```
+
+**Erros**
+
+| Status | Quando ocorre |
+|:---:|---|
+| `400 Bad Request` | E-mail já cadastrado (`{"detail": "Email já cadastrado"}`). |
+| `422 Unprocessable Entity` | Corpo inválido (campo ausente ou e-mail malformado). |
+| `500 Internal Server Error` | Falha ao acessar/gravar na base de dados. |
+
+**Exemplo com `curl`**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "joao@exemplo.com",
+    "password": "senha-super-secreta",
+    "nome": "João Silva"
+  }'
+```
+
+> Após o cadastro, autentique-se em `POST /api/v1/auth/login` para receber o
+> `access_token` e usá-lo como `Authorization: Bearer <token>` nas rotas protegidas.
 
 ### Obras — `/api/v1/obras`
 | Método | Rota | Descrição |
