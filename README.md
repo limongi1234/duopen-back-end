@@ -230,10 +230,16 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 | POST | `/analisar` | (compat) Dispara análise de risco de uma obra |
 
 ### IA / RAG — `/api/v1/ia`
+Agente de IA generativa com RAG (LangChain + pgvector/Supabase) sobre contratos e obras.
+
 | Método | Rota | Descrição |
 |---|---|---|
-| POST | `/query` | Consulta em linguagem natural (RAG) |
-| POST | `/embeddings` | Gera embeddings da base |
+| POST | `/consulta` | Consulta em linguagem natural — resposta completa + fontes |
+| GET | `/consulta/stream` | Mesma consulta com streaming via Server-Sent Events (`pergunta`, `obra_id?`, `top_k`) |
+| POST | `/embeddings/gerar` | Dispara task Celery de geração de embeddings |
+
+> Requer, no Supabase, a tabela `documentos_rag` (pgvector) e a função SQL de similaridade
+> `match_documentos_rag`, além de `OPENAI_API_KEY` configurada.
 
 ---
 

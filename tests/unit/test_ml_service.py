@@ -2,20 +2,6 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 
-@pytest.fixture(autouse=True)
-def mock_settings():
-    with patch("app.core.config.get_settings") as mock:
-        s = MagicMock()
-        s.secret_key = "test-secret-key-for-testing-minimum-32"
-        s.algorithm = "HS256"
-        s.access_token_expire = 15
-        s.refresh_token_expire = 10080
-        s.openai_api_key = "sk-test"
-        s.embedding_model = "text-embedding-3-small"
-        mock.return_value = s
-        yield s
-
-
 def test_ml_service_get_predicao_found():
     from app.services.ml_service import MLService
 
@@ -70,20 +56,60 @@ def test_ml_service_listar_predicoes_filtra_nivel_risco():
 
 @pytest.mark.asyncio
 async def test_rag_service_query():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
     from app.services.rag_service import RAGService
 
-    service = RAGService()
-    result = await service.query("Qual a eficiência?", obra_id="obra-1", top_k=3)
+    chain = SimpleNamespace(
+        ainvoke=AsyncMock(
+            return_value={
+                "result": "Resposta baseada nos contratos.",
+                "source_documents": [
+                    SimpleNamespace(
+                        page_content="trecho do contrato",
+                        metadata={"id_contrato": "c1"},
+                    )
+                ],
+            }
+        )
+    )
+    with patch("app.services.rag_service.RetrievalQA") as mock_qa, \
+         patch("app.services.rag_service.SupabaseVectorStore"), \
+         patch("app.services.rag_service.OpenAIEmbeddings"), \
+         patch("app.services.rag_service.ChatOpenAI"), \
+         patch("app.services.rag_service.get_supabase_client"):
+        mock_qa.from_chain_type.return_value = chain
+        result = await RAGService().query("Qual a eficiência?", obra_id="obra-1", top_k=3)
 
-    assert isinstance(result.resposta, str)
-    assert isinstance(result.fontes, list)
+    assert result.resposta == "Resposta baseada nos contratos."
+    assert result.fontes[0]["conteudo"] == "trecho do contrato"
+    assert result.fontes[0]["metadata"]["id_contrato"] == "c1"
 
 
 @pytest.mark.asyncio
-async def test_rag_service_query_no_obra():
+async def test_rag_service_stream():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
     from app.services.rag_service import RAGService
 
-    service = RAGService()
-    result = await service.query("Pergunta geral?")
+    retriever = SimpleNamespace(
+        ainvoke=AsyncMock(
+            return_value=[SimpleNamespace(page_content="contexto", metadata={})]
+        )
+    )
 
-    assert result.resposta is not None
+    async def fake_astream(prompt):
+        for token in ["Res", "posta"]:
+            yield SimpleNamespace(content=token)
+
+    llm = MagicMock()
+    llm.astream = fake_astream
+
+    with patch("app.services.rag_service.SupabaseVectorStore") as mock_vs, \
+         patch("app.services.rag_service.OpenAIEmbeddings"), \
+         patch("app.services.rag_service.ChatOpenAI", return_value=llm), \
+         patch("app.services.rag_service.get_supabase_client"):
+        mock_vs.return_value.as_retriever.return_value = retriever
+        tokens = [token async for token in RAGService().stream("pergunta?")]
+
+    assert tokens == ["Res", "posta"]

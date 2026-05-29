@@ -709,12 +709,39 @@ def test_status_task(client_with_auth):
 # ── IA ────────────────────────────────────────────────────────────────────────
 
 def test_consultar_ia(client_with_auth):
-    client, _ = client_with_auth
+    from unittest.mock import AsyncMock
+    from app.schemas.ml import RAGResponse
 
-    resp = client.post("/api/v1/ia/query", json={"pergunta": "Qual a eficiência da obra?"})
+    client, _ = client_with_auth
+    with patch("app.routers.ia.RAGService") as mock_service_cls:
+        mock_service_cls.return_value.query = AsyncMock(
+            return_value=RAGResponse(
+                resposta="A obra está dentro do prazo.",
+                fontes=[{"conteudo": "trecho", "metadata": {"id_contrato": "c1"}}],
+            )
+        )
+        resp = client.post("/api/v1/ia/consulta", json={"pergunta": "Qual a eficiência da obra?"})
 
     assert resp.status_code == 200
-    assert "resposta" in resp.json()
+    assert resp.json()["resposta"] == "A obra está dentro do prazo."
+    assert resp.json()["fontes"][0]["metadata"]["id_contrato"] == "c1"
+
+
+def test_consultar_ia_stream(client_with_auth):
+    client, _ = client_with_auth
+
+    async def fake_stream(pergunta, obra_id=None, top_k=5):
+        for token in ["Olá", " mundo"]:
+            yield token
+
+    with patch("app.routers.ia.RAGService") as mock_service_cls:
+        mock_service_cls.return_value.stream = fake_stream
+        resp = client.get("/api/v1/ia/consulta/stream?pergunta=teste")
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    assert '"token": "Olá"' in resp.text
+    assert "[DONE]" in resp.text
 
 
 def test_gerar_embeddings(client_with_auth):
@@ -722,7 +749,7 @@ def test_gerar_embeddings(client_with_auth):
     with patch("app.routers.ia.generate_embeddings") as mock_task:
         mock_task.delay.return_value.id = "emb-task-1"
 
-        resp = client.post("/api/v1/ia/embeddings", json={
+        resp = client.post("/api/v1/ia/embeddings/gerar", json={
             "documento_id": "doc-1", "texto": "Texto do documento"
         })
 
