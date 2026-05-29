@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     llm_model: str = "gemini-2.5-flash-lite"
     rag_top_k: int = 5
     rag_temperature: float = 0.3
+    # Cache do modelo HF. None = cache padrão (~/.cache/huggingface).
+    # No Railway, aponte para um volume persistente (ex.: /app/.cache/huggingface).
+    hf_cache_folder: Optional[str] = None
 
     # Mantido opcional para compatibilidade; a stack de IA não usa mais OpenAI.
     openai_api_key: Optional[str] = None
