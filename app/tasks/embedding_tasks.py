@@ -1,6 +1,7 @@
 import logging
 from typing import Any, Optional
 
+from celery.exceptions import MaxRetriesExceededError
 from postgrest.exceptions import APIError
 
 from app.tasks.celery_app import celery_app, backoff_countdown
@@ -161,11 +162,14 @@ def task_gerar_embeddings(self, forcar: bool = False) -> dict:
                 total_chunks += 1
 
         log.info("Embeddings gerados: %s chunks", total_chunks)
+        release_lock(EMBEDDINGS_LOCK_KEY)  # sucesso -> libera o lock
         return {"status": "ok", "chunks": total_chunks}
 
     except Exception as exc:
         log.error("Erro ao gerar embeddings: %s", exc)
-        raise self.retry(exc=exc, countdown=backoff_countdown(self.request.retries))
-    finally:
-        # Libera o lock ao terminar (sucesso/falha). O TTL cobre morte do worker.
-        release_lock(EMBEDDINGS_LOCK_KEY)
+        # Mantém o lock entre tentativas; só libera ao esgotar os retries.
+        try:
+            raise self.retry(exc=exc, countdown=backoff_countdown(self.request.retries))
+        except MaxRetriesExceededError:
+            release_lock(EMBEDDINGS_LOCK_KEY)
+            raise
