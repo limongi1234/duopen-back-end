@@ -896,7 +896,7 @@ def test_consultar_ia_stream_readonly_403(client_with_auth):
 
 def test_gerar_embeddings(client_with_auth):
     client, _ = client_with_auth
-    with patch("app.routers.ia._indexacao_em_andamento", return_value=False), \
+    with patch("app.routers.ia.acquire_lock", return_value=True), \
          patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task:
         mock_task.delay.return_value.id = "emb-task-1"
 
@@ -912,7 +912,7 @@ def test_gerar_embeddings(client_with_auth):
 
 def test_gerar_embeddings_forcar(client_with_auth):
     client, _ = client_with_auth
-    with patch("app.routers.ia._indexacao_em_andamento", return_value=False), \
+    with patch("app.routers.ia.acquire_lock", return_value=True), \
          patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task:
         mock_task.delay.return_value.id = "emb-task-2"
 
@@ -924,7 +924,8 @@ def test_gerar_embeddings_forcar(client_with_auth):
 
 def test_gerar_embeddings_em_andamento_409(client_with_auth):
     client, _ = client_with_auth
-    with patch("app.routers.ia._indexacao_em_andamento", return_value=True), \
+    # lock já tomado -> não dispara e retorna 409
+    with patch("app.routers.ia.acquire_lock", return_value=False), \
          patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task:
         resp = client.post("/api/v1/ia/embeddings/gerar")
 

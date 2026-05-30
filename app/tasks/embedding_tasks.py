@@ -6,12 +6,17 @@ from postgrest.exceptions import APIError
 from app.tasks.celery_app import celery_app, backoff_countdown
 from app.core.config import get_settings
 from app.core.database import get_supabase_client
+from app.core.locks import release_lock
 
 log = logging.getLogger("tasks.embedding")
 
 CHUNK_SIZE = 512   # caracteres por chunk
 CHUNK_OVERLAP = 50  # sobreposição entre chunks
 _UUID_ZERO = "00000000-0000-0000-0000-000000000000"  # filtro "match-all" para delete
+
+# Lock distribuído que serializa a indexação (adquirido no endpoint, liberado aqui).
+EMBEDDINGS_LOCK_KEY = "duopen:lock:embeddings"
+EMBEDDINGS_LOCK_TTL = 1800  # 30 min — rede de segurança caso o worker morra
 
 
 def _linha(rotulo: str, valor: Any) -> Optional[str]:
@@ -161,3 +166,6 @@ def task_gerar_embeddings(self, forcar: bool = False) -> dict:
     except Exception as exc:
         log.error("Erro ao gerar embeddings: %s", exc)
         raise self.retry(exc=exc, countdown=backoff_countdown(self.request.retries))
+    finally:
+        # Libera o lock ao terminar (sucesso/falha). O TTL cobre morte do worker.
+        release_lock(EMBEDDINGS_LOCK_KEY)

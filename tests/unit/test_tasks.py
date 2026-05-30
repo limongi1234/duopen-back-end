@@ -85,6 +85,7 @@ def test_task_gerar_embeddings_enriquece_com_obra():
     splitter.split_text.side_effect = fake_split
 
     with patch("app.tasks.embedding_tasks.get_supabase_client", return_value=client), \
+         patch("app.tasks.embedding_tasks.release_lock"), \
          patch("sentence_transformers.SentenceTransformer", return_value=model), \
          patch("langchain_text_splitters.RecursiveCharacterTextSplitter", return_value=splitter):
         result = emb.task_gerar_embeddings()
@@ -131,6 +132,7 @@ def test_task_gerar_embeddings_forcar_recria_indice():
     splitter.split_text.return_value = ["chunk1"]
 
     with patch("app.tasks.embedding_tasks.get_supabase_client", return_value=client), \
+         patch("app.tasks.embedding_tasks.release_lock"), \
          patch("sentence_transformers.SentenceTransformer", return_value=model), \
          patch("langchain_text_splitters.RecursiveCharacterTextSplitter", return_value=splitter):
         result = emb.task_gerar_embeddings(forcar=True)
@@ -152,7 +154,8 @@ def test_task_gerar_embeddings_retries_on_error():
     # get_supabase_client é chamado antes de instanciar o modelo → sem download.
     try:
         with patch("app.tasks.embedding_tasks.get_supabase_client",
-                   side_effect=RuntimeError("forced error")):
+                   side_effect=RuntimeError("forced error")), \
+             patch("app.tasks.embedding_tasks.release_lock"):
             emb.task_gerar_embeddings()
     except Exception:
         pass

@@ -4,14 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.locks import acquire_lock, release_lock
 from app.routers.auth import get_current_user, require_perfil
 from app.services.rag_service import consultar, consultar_stream, get_embeddings
-from app.tasks.celery_app import celery_app
+from app.tasks.embedding_tasks import EMBEDDINGS_LOCK_KEY, EMBEDDINGS_LOCK_TTL
 
 router = APIRouter()
-
-# Nome totalmente qualificado da task — usado na guarda de concorrência.
-_EMBEDDING_TASK = "app.tasks.embedding_tasks.task_gerar_embeddings"
 
 
 class ConsultaRequest(BaseModel):
@@ -60,19 +58,6 @@ class EmbeddingJobResponse(BaseModel):
 class WarmupResponse(BaseModel):
     status: str
     modelo: str
-
-
-def _indexacao_em_andamento() -> bool:
-    """True se já existe uma indexação de embeddings ativa em algum worker."""
-    try:
-        ativos = celery_app.control.inspect(timeout=1).active() or {}
-    except Exception:  # broker/worker indisponível -> não bloqueia o disparo
-        return False
-    return any(
-        t.get("name") == _EMBEDDING_TASK
-        for tarefas in ativos.values()
-        for t in tarefas
-    )
 
 
 @router.post(
@@ -159,7 +144,8 @@ async def post_gerar_embeddings(
     ),
     _: dict = Depends(require_perfil("admin")),
 ):
-    if _indexacao_em_andamento():
+    # Lock distribuído: só uma indexação por vez. Liberado pela própria task ao fim.
+    if not acquire_lock(EMBEDDINGS_LOCK_KEY, EMBEDDINGS_LOCK_TTL):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Já existe uma indexação de embeddings em andamento.",
@@ -167,7 +153,12 @@ async def post_gerar_embeddings(
 
     from app.tasks.embedding_tasks import task_gerar_embeddings
 
-    task = task_gerar_embeddings.delay(forcar=forcar)
+    try:
+        task = task_gerar_embeddings.delay(forcar=forcar)
+    except Exception:  # falhou ao enfileirar -> não segura o lock
+        release_lock(EMBEDDINGS_LOCK_KEY)
+        raise
+
     return EmbeddingJobResponse(
         task_id=task.id,
         status="enqueued",
