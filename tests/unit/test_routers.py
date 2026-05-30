@@ -291,6 +291,40 @@ def test_listar_obras_expoe_campos_coleta(client_with_auth):
     assert "percentual_executado_financeiro" in item
 
 
+def test_obter_obra_expoe_ieop(client_with_auth):
+    client, db = client_with_auth
+    obra = {
+        **OBRA_FIXTURE,
+        "ieop_score": 85.0,
+        "ieop_classe": "Ótimo",
+        "ieop_custo": 50.0,
+        "tipo_sinapi": "drenagem",
+    }
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [obra]
+
+    resp = client.get("/api/v1/obras/obra-1")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ieop_score"] == 85.0
+    assert body["ieop_classe"] == "Ótimo"
+    assert body["ieop_custo"] == 50.0
+    assert body["tipo_sinapi"] == "drenagem"
+
+
+def test_listar_obras_expoe_ieop(client_with_auth):
+    client, db = client_with_auth
+    obra = {**OBRA_FIXTURE, "ieop_score": 70.0, "ieop_classe": "Bom"}
+    _mock_lista(db, [obra], total=1)
+
+    resp = client.get("/api/v1/obras/")
+
+    item = resp.json()["items"][0]
+    assert item["ieop_score"] == 70.0
+    assert item["ieop_classe"] == "Bom"
+    assert "tipo_sinapi" in item  # exposto (null na view; preenchido no detalhe)
+
+
 def test_contratos_por_obra(client_with_auth):
     client, db = client_with_auth
     contrato = {"id": "cont-1", "obra_id": "obra-1", "valor": 50000.0}

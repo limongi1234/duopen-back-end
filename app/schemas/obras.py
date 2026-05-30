@@ -18,6 +18,23 @@ class ObraColetaFields(BaseModel):
     percentual_executado_financeiro: Optional[float] = None
 
 
+class ObraIEOPFields(BaseModel):
+    """Resultado do modelo de eficiência (IEOP) gravado pelo duopen-ml em `obras`.
+
+    Todos nullable. `ieop_score` é 0–100; `ieop_classe` é categórico
+    (ex.: Ótimo/Bom/Regular); os demais `ieop_*` são componentes (0–100).
+    """
+
+    ieop_score: Optional[float] = None
+    ieop_classe: Optional[str] = None
+    ieop_custo: Optional[float] = None
+    ieop_atraso: Optional[float] = None
+    ieop_recorrencia: Optional[float] = None
+    ieop_execucao: Optional[float] = None
+    ieop_calculado_em: Optional[str] = None
+    tipo_sinapi: Optional[str] = None
+
+
 class ObraBase(BaseModel):
     nome: str
     descricao: Optional[str] = None
@@ -48,7 +65,7 @@ class ObraUpdate(BaseModel):
     nivel_risco: Optional[str] = None
 
 
-class ObraResponse(ObraBase, ObraColetaFields):
+class ObraResponse(ObraBase, ObraColetaFields, ObraIEOPFields):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
@@ -59,7 +76,7 @@ class ObraDetalheResponse(ObraResponse):
     pass
 
 
-class ObraResumoResponse(ObraColetaFields):
+class ObraResumoResponse(ObraColetaFields, ObraIEOPFields):
     """Item da listagem, espelhando a view `mv_obras_resumo`."""
 
     model_config = ConfigDict(from_attributes=True)
