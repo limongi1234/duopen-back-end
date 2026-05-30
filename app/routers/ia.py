@@ -1,18 +1,24 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.routers.auth import get_current_user, require_perfil
 from app.services.rag_service import consultar, consultar_stream, get_embeddings
+from app.tasks.celery_app import celery_app
 
 router = APIRouter()
+
+# Nome totalmente qualificado da task — usado na guarda de concorrência.
+_EMBEDDING_TASK = "app.tasks.embedding_tasks.task_gerar_embeddings"
 
 
 class ConsultaRequest(BaseModel):
     pergunta: str = Field(
-        ..., description="Pergunta em linguagem natural sobre obras/contratos de Macaé.",
+        ...,
+        min_length=3,
+        description="Pergunta em linguagem natural sobre obras/contratos de Macaé.",
         examples=["Quais obras de nível de risco alto e de quais secretarias?"],
     )
 
@@ -21,15 +27,52 @@ class ConsultaResponse(BaseModel):
     resposta: str = Field(..., description="Resposta gerada pelo LLM com base nos documentos recuperados.")
     modelo: Optional[str] = Field(None, description="Modelo usado (None em caso de fallback por erro).")
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "resposta": "As obras de risco alto são das secretarias de Infraestrutura e Obras.",
+                    "modelo": "gemini-2.5-flash-lite",
+                }
+            ]
+        }
+    )
 
-class TaskEnfileirada(BaseModel):
-    task_id: str
-    status: str = Field(..., examples=["enqueued"])
+
+class EmbeddingJobResponse(BaseModel):
+    task_id: str = Field(..., description="ID da task Celery enfileirada.")
+    status: str = Field("enqueued", description="Estado inicial da task.")
+    status_url: str = Field(..., description="Endpoint para acompanhar o progresso da indexação.")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "task_id": "c6e9f5e8-be5f-4a19-b99d-9cb07338c802",
+                    "status": "enqueued",
+                    "status_url": "/api/v1/ml/status/c6e9f5e8-be5f-4a19-b99d-9cb07338c802",
+                }
+            ]
+        }
+    )
 
 
 class WarmupResponse(BaseModel):
     status: str
     modelo: str
+
+
+def _indexacao_em_andamento() -> bool:
+    """True se já existe uma indexação de embeddings ativa em algum worker."""
+    try:
+        ativos = celery_app.control.inspect(timeout=1).active() or {}
+    except Exception:  # broker/worker indisponível -> não bloqueia o disparo
+        return False
+    return any(
+        t.get("name") == _EMBEDDING_TASK
+        for tarefas in ativos.values()
+        for t in tarefas
+    )
 
 
 @router.post(
@@ -40,6 +83,7 @@ class WarmupResponse(BaseModel):
         "Recupera os trechos de contratos/obras mais relevantes (busca semântica "
         "pgvector) e gera uma resposta fundamentada com o Gemini. **Perfis:** admin, gestor."
     ),
+    responses={403: {"description": "Perfil sem permissão (readonly bloqueado)."}},
 )
 async def post_consulta(
     body: ConsultaRequest,
@@ -59,7 +103,7 @@ async def post_consulta(
     responses={200: {"content": {"text/event-stream": {"schema": {"type": "string"}}}}},
 )
 async def get_consulta_stream(
-    pergunta: str = Query(..., description="Pergunta em linguagem natural."),
+    pergunta: str = Query(..., min_length=3, description="Pergunta em linguagem natural."),
     _: dict = Depends(require_perfil("admin", "gestor")),
 ):
     return StreamingResponse(
@@ -71,28 +115,64 @@ async def get_consulta_stream(
 
 @router.post(
     "/embeddings/gerar",
-    response_model=TaskEnfileirada,
+    response_model=EmbeddingJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Indexar contratos (gerar embeddings)",
     description=(
-        "Dispara a task Celery que indexa os contratos em `documentos_rag`/`embeddings`, "
-        "enriquecendo cada documento com o contexto da obra (nome, secretaria, bairro, "
-        "nível de risco). Acompanhe pelo `task_id` em `/api/v1/ml/status/{task_id}`.\n\n"
+        "Enfileira a task Celery que indexa os contratos em `documentos_rag`/`embeddings`, "
+        "enriquecendo cada documento com o contexto da obra (nome, secretaria, bairro, nível "
+        "de risco). Retorna **202** com o `task_id` e a `status_url` para polling em "
+        "`/api/v1/ml/status/{task_id}`.\n\n"
         "- `forcar=false` (padrão): **incremental** — indexa só contratos ainda não indexados.\n"
-        "- `forcar=true`: **rebuild completo** — apaga o índice e regera tudo (use após "
-        "mudar o template do documento ou o modelo de embedding).\n\n"
+        "- `forcar=true`: **rebuild completo** — apaga o índice e regera tudo.\n\n"
+        "Há **guarda de concorrência**: se já houver uma indexação em andamento, retorna **409**.\n\n"
         "**Perfil:** admin."
     ),
+    responses={
+        202: {"description": "Indexação enfileirada."},
+        403: {
+            "description": "Perfil sem permissão (apenas admin).",
+            "content": {"application/json": {"example": {"detail": "Seu perfil não tem permissão para esta ação"}}},
+        },
+        409: {
+            "description": "Já existe uma indexação em andamento.",
+            "content": {"application/json": {"example": {"detail": "Já existe uma indexação de embeddings em andamento."}}},
+        },
+    },
 )
 async def post_gerar_embeddings(
     forcar: bool = Query(
-        False, description="Recria todo o índice do zero (rebuild). Padrão: incremental."
+        False,
+        description="Recria todo o índice do zero (rebuild). Padrão: incremental.",
+        openapi_examples={
+            "incremental": {
+                "summary": "Incremental (padrão)",
+                "description": "Indexa apenas contratos ainda não indexados.",
+                "value": False,
+            },
+            "rebuild": {
+                "summary": "Rebuild completo",
+                "description": "Apaga o índice e regera tudo (após mudar template/modelo).",
+                "value": True,
+            },
+        },
     ),
     _: dict = Depends(require_perfil("admin")),
 ):
+    if _indexacao_em_andamento():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Já existe uma indexação de embeddings em andamento.",
+        )
+
     from app.tasks.embedding_tasks import task_gerar_embeddings
 
     task = task_gerar_embeddings.delay(forcar=forcar)
-    return {"task_id": task.id, "status": "enqueued"}
+    return EmbeddingJobResponse(
+        task_id=task.id,
+        status="enqueued",
+        status_url=f"/api/v1/ml/status/{task.id}",
+    )
 
 
 @router.get(

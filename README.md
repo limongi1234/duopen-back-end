@@ -282,7 +282,7 @@ Agente de IA generativa com RAG (LangChain + pgvector/Supabase) sobre contratos 
 |---|---|---|---|
 | POST | `/consulta` | admin, gestor | Consulta em linguagem natural → `{"resposta", "modelo"}` |
 | GET | `/consulta/stream` | admin, gestor | Mesma consulta com streaming SSE (`?pergunta=...`) |
-| POST | `/embeddings/gerar` | admin | Dispara task Celery que indexa contratos sem embedding (enriquecidos com o contexto da obra: nome, secretaria, bairro, nível de risco) |
+| POST | `/embeddings/gerar` | admin | Enfileira a indexação dos contratos (enriquecidos com o contexto da obra). **202** com `task_id` + `status_url`; `?forcar=true` recria tudo; **409** se já houver indexação em andamento |
 | GET | `/warmup` | autenticado | Pré-aquece o modelo de embedding (~420MB) |
 
 **Pré-requisitos para rodar o RAG:**

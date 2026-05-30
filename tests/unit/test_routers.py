@@ -896,26 +896,40 @@ def test_consultar_ia_stream_readonly_403(client_with_auth):
 
 def test_gerar_embeddings(client_with_auth):
     client, _ = client_with_auth
-    with patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task:
+    with patch("app.routers.ia._indexacao_em_andamento", return_value=False), \
+         patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task:
         mock_task.delay.return_value.id = "emb-task-1"
 
         resp = client.post("/api/v1/ia/embeddings/gerar")
 
-    assert resp.status_code == 200
-    assert resp.json()["task_id"] == "emb-task-1"
-    assert resp.json()["status"] == "enqueued"
+    assert resp.status_code == 202  # Accepted (job assíncrono)
+    body = resp.json()
+    assert body["task_id"] == "emb-task-1"
+    assert body["status"] == "enqueued"
+    assert body["status_url"] == "/api/v1/ml/status/emb-task-1"
     mock_task.delay.assert_called_once_with(forcar=False)
 
 
 def test_gerar_embeddings_forcar(client_with_auth):
     client, _ = client_with_auth
-    with patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task:
+    with patch("app.routers.ia._indexacao_em_andamento", return_value=False), \
+         patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task:
         mock_task.delay.return_value.id = "emb-task-2"
 
         resp = client.post("/api/v1/ia/embeddings/gerar?forcar=true")
 
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     mock_task.delay.assert_called_once_with(forcar=True)
+
+
+def test_gerar_embeddings_em_andamento_409(client_with_auth):
+    client, _ = client_with_auth
+    with patch("app.routers.ia._indexacao_em_andamento", return_value=True), \
+         patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task:
+        resp = client.post("/api/v1/ia/embeddings/gerar")
+
+    assert resp.status_code == 409
+    mock_task.delay.assert_not_called()
 
 
 def test_gerar_embeddings_readonly_403(client_with_auth):
