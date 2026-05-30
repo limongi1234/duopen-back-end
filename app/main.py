@@ -41,12 +41,40 @@ async def lifespan(app: FastAPI):
     await dispose_db_engine()
 
 
+API_DESCRIPTION = """
+Plataforma Inteligente de Análise de Eficiência de Obras Públicas — **Macaé/RJ**.
+
+### Autenticação
+Quase todas as rotas exigem **Bearer token** JWT (obtido em `POST /api/v1/auth/login`).
+Envie no header: `Authorization: Bearer <access_token>`.
+
+### Perfis e permissões
+- **admin** — acesso total (inclui re-treino de ML e indexação de embeddings)
+- **gestor** — dashboard e consultas RAG
+- **readonly** — apenas visualização (sem RAG)
+
+Rotas sensíveis retornam **403** quando o perfil não tem permissão.
+"""
+
+tags_metadata = [
+    {"name": "Auth", "description": "Cadastro, login, refresh e perfil do usuário (JWT)."},
+    {"name": "Obras", "description": "Listagem (filtros, período, sort, paginação), detalhe, contratos e aditivos."},
+    {"name": "Contratos", "description": "Consulta de contratos (lista, detalhe e por obra)."},
+    {"name": "Fornecedores", "description": "Ranking de fornecedores e obras por CNPJ."},
+    {"name": "Mapa", "description": "Obras geolocalizadas em GeoJSON, com filtros e recorte por período."},
+    {"name": "Dashboard", "description": "Métricas agregadas (calculadas da tabela de obras) e distribuições."},
+    {"name": "ML", "description": "Predições de risco (XGBoost) e re-treino assíncrono — re-treino é admin."},
+    {"name": "IA", "description": "RAG (HuggingFace + Gemini) sobre contratos/obras — consulta é admin/gestor."},
+    {"name": "Health", "description": "Verificação de saúde (Supabase e banco direto)."},
+]
+
 app = FastAPI(
     title="DUOPEN 2026 — API",
-    description="Plataforma Inteligente de Análise de Eficiência de Obras Públicas — Macaé/RJ",
+    description=API_DESCRIPTION,
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    openapi_tags=tags_metadata,
     lifespan=lifespan,
 )
 

@@ -11,6 +11,7 @@ log = logging.getLogger("tasks.embedding")
 
 CHUNK_SIZE = 512   # caracteres por chunk
 CHUNK_OVERLAP = 50  # sobreposição entre chunks
+_UUID_ZERO = "00000000-0000-0000-0000-000000000000"  # filtro "match-all" para delete
 
 
 def _linha(rotulo: str, valor: Any) -> Optional[str]:
@@ -74,10 +75,16 @@ def _carregar_obras(client) -> dict[str, dict]:
 
 
 @celery_app.task(bind=True, max_retries=3)
-def task_gerar_embeddings(self) -> dict:
+def task_gerar_embeddings(self, forcar: bool = False) -> dict:
     """Indexa em `documentos_rag`/`embeddings` os contratos ainda sem embedding,
     enriquecendo cada documento com o contexto da obra vinculada (nome, secretaria,
     bairro, nível de risco do ML).
+
+    Args:
+        forcar: quando True, apaga todo o índice e regera do zero (rebuild
+            completo). Use após mudar o template do documento ou o modelo de
+            embedding. Quando False (padrão), é incremental: só indexa contratos
+            ainda não presentes em `documentos_rag`.
 
     Modelo: paraphrase-multilingual-MiniLM-L12-v2 (384 dims).
     """
@@ -93,11 +100,18 @@ def task_gerar_embeddings(self) -> dict:
             chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
         )
 
-        ja_indexados = {
-            r["id_contrato"]
-            for r in (client.table("documentos_rag").select("id_contrato").execute().data or [])
-            if r.get("id_contrato")
-        }
+        if forcar:
+            # Rebuild completo: apaga na ordem da FK (embeddings -> documentos_rag).
+            log.warning("Reindexação forçada: apagando índice RAG existente")
+            client.table("embeddings").delete().neq("id", _UUID_ZERO).execute()
+            client.table("documentos_rag").delete().neq("id", _UUID_ZERO).execute()
+            ja_indexados: set = set()
+        else:
+            ja_indexados = {
+                r["id_contrato"]
+                for r in (client.table("documentos_rag").select("id_contrato").execute().data or [])
+                if r.get("id_contrato")
+            }
         contratos = (
             client.table("contratos")
             .select("id,id_obra,objeto,modalidade,situacao,valor_global,valor_final")

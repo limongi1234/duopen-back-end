@@ -103,6 +103,45 @@ def test_task_gerar_embeddings_enriquece_com_obra():
     assert meta["obra"] == "Escola Municipal"
 
 
+def test_task_gerar_embeddings_forcar_recria_indice():
+    from unittest.mock import patch
+    import app.tasks.embedding_tasks as emb
+
+    client = MagicMock()
+    docs_tbl = MagicMock()
+    # contrato c1 JÁ indexado — no modo incremental seria pulado; forçando, reprocessa.
+    docs_tbl.select.return_value.execute.return_value.data = [{"id_contrato": "c1"}]
+    docs_tbl.insert.return_value.execute.return_value.data = [{"id": "doc1"}]
+    contratos_tbl = MagicMock()
+    contratos_tbl.select.return_value.execute.return_value.data = [
+        {"id": "c1", "id_obra": "o1", "objeto": "X", "modalidade": "Pregão",
+         "situacao": "Em andamento", "valor_global": 100.0, "valor_final": 90.0}
+    ]
+    mv_tbl = MagicMock()
+    mv_tbl.select.return_value.execute.return_value.data = []
+    emb_tbl = MagicMock()
+    client.table.side_effect = lambda name: {
+        "documentos_rag": docs_tbl, "contratos": contratos_tbl,
+        "mv_obras_resumo": mv_tbl, "embeddings": emb_tbl,
+    }[name]
+
+    model = MagicMock()
+    model.encode.return_value.tolist.return_value = [0.1] * 384
+    splitter = MagicMock()
+    splitter.split_text.return_value = ["chunk1"]
+
+    with patch("app.tasks.embedding_tasks.get_supabase_client", return_value=client), \
+         patch("sentence_transformers.SentenceTransformer", return_value=model), \
+         patch("langchain_text_splitters.RecursiveCharacterTextSplitter", return_value=splitter):
+        result = emb.task_gerar_embeddings(forcar=True)
+
+    # apagou o índice antes de regerar (embeddings e documentos_rag)
+    emb_tbl.delete.assert_called()
+    docs_tbl.delete.assert_called()
+    # reprocessou mesmo o contrato já indexado
+    assert result == {"status": "ok", "chunks": 1}
+
+
 def test_task_gerar_embeddings_retries_on_error():
     from unittest.mock import patch
     import app.tasks.embedding_tasks as emb

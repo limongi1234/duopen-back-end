@@ -895,6 +895,18 @@ def test_gerar_embeddings(client_with_auth):
     assert resp.status_code == 200
     assert resp.json()["task_id"] == "emb-task-1"
     assert resp.json()["status"] == "enqueued"
+    mock_task.delay.assert_called_once_with(forcar=False)
+
+
+def test_gerar_embeddings_forcar(client_with_auth):
+    client, _ = client_with_auth
+    with patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task:
+        mock_task.delay.return_value.id = "emb-task-2"
+
+        resp = client.post("/api/v1/ia/embeddings/gerar?forcar=true")
+
+    assert resp.status_code == 200
+    mock_task.delay.assert_called_once_with(forcar=True)
 
 
 def test_gerar_embeddings_readonly_403(client_with_auth):
