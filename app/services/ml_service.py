@@ -3,6 +3,8 @@ import logging
 
 from supabase import Client
 
+from app.core.database import first, rows
+
 log = logging.getLogger(__name__)
 
 PREDICOES_TABLE = "predicoes"
@@ -16,14 +18,12 @@ class MLService:
 
     def get_predicao(self, obra_id: str) -> Optional[dict[str, Any]]:
         """Retorna a predição de uma obra, ou ``None`` se não houver."""
-        result = (
+        return first(
             self.db.table(PREDICOES_TABLE)
             .select("*")
             .eq("id_obra", obra_id)
             .execute()
         )
-        data = result.data or []
-        return data[0] if data else None
 
     def listar_predicoes(
         self, nivel_risco: Optional[str] = None
@@ -32,4 +32,4 @@ class MLService:
         query = self.db.table(PREDICOES_TABLE).select("*")
         if nivel_risco:
             query = query.eq("nivel_risco", nivel_risco)
-        return query.execute().data or []
+        return rows(query.execute())

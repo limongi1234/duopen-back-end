@@ -1,9 +1,10 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from postgrest.types import CountMethod
 from supabase import Client
 
-from app.core.database import get_supabase_client
+from app.core.database import first, get_supabase_client, rows
 from app.routers.auth import get_current_user
 from app.schemas.fornecedores import FornecedorResponse, FornecedorRankingResponse
 
@@ -24,7 +25,7 @@ async def ranking_fornecedores(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
-    query = db.table("mv_fornecedores_ranking").select("*", count="exact")
+    query = db.table("mv_fornecedores_ranking").select("*", count=CountMethod.exact)
 
     if taxa_aditivo_max is not None:
         query = query.lte("taxa_aditivo", taxa_aditivo_max)
@@ -40,7 +41,7 @@ async def ranking_fornecedores(
     )
 
     return FornecedorRankingResponse.build(
-        data=result.data,
+        data=rows(result),
         total=result.count or 0,
         page=page,
         size=size,
@@ -58,16 +59,16 @@ async def obras_do_fornecedor(
     _: dict = Depends(get_current_user),
 ):
     # cnpj -> id do fornecedor (tabela `fornecedores`) -> contratos por id_fornecedor.
-    fornecedor = db.table("fornecedores").select("id").eq("cnpj", cnpj).execute().data
+    fornecedor = first(db.table("fornecedores").select("id").eq("cnpj", cnpj).execute())
     if not fornecedor:
         return []
     result = (
         db.table("contratos")
         .select("id, numero, objeto, situacao, valor_global, valor_final, id_obra")
-        .eq("id_fornecedor", fornecedor[0]["id"])
+        .eq("id_fornecedor", fornecedor["id"])
         .execute()
     )
-    return result.data
+    return rows(result)
 
 
 @router.get(
@@ -81,12 +82,9 @@ async def perfil_fornecedor(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
-    result = (
-        db.table("mv_fornecedores_ranking")
-        .select("*")
-        .eq("cnpj", cnpj)
-        .execute()
+    fornecedor = first(
+        db.table("mv_fornecedores_ranking").select("*").eq("cnpj", cnpj).execute()
     )
-    if not result.data:
+    if fornecedor is None:
         raise HTTPException(status_code=404, detail="Fornecedor não encontrado")
-    return result.data[0]
+    return fornecedor

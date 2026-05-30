@@ -1,0 +1,3 @@
+[tool.mypy]
+# Bibliotecas sem stubs/py.typed (celery, jose, ...) não devem gerar ruído.
+ignore_missing_imports = true

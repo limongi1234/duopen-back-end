@@ -97,7 +97,7 @@ app.include_router(ia.router,           prefix="/api/v1/ia",           tags=["IA
 
 
 @app.get("/health", tags=["Health"])
-async def health_check():
+async def health_check() -> dict[str, Any]:
     checks: dict[str, Any] = await check_connection()
     healthy = all(checks.values())
     return {

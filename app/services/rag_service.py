@@ -7,7 +7,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from app.core.config import get_settings
-from app.core.database import get_supabase_client
+from app.core.database import get_supabase_client, rows
 
 log = logging.getLogger("services.rag")
 
@@ -52,7 +52,7 @@ def buscar_documentos(pergunta: str, top_k: int) -> list[dict[str, Any]]:
     result = get_supabase_client().rpc(
         MATCH_FUNCTION, {"query_embedding": vetor, "match_count": top_k}
     ).execute()
-    return result.data or []
+    return rows(result)
 
 
 # ── Prompt em português contextualizado para obras de Macaé ────────────────────

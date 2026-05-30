@@ -4,6 +4,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 from postgrest.exceptions import APIError
+from postgrest.types import CountMethod
 from supabase import Client
 from typing import Optional
 
@@ -41,7 +42,7 @@ def _listar_de_obras(
     db, *, situacao, secretaria, bairro, data_inicio, data_fim, sort, page, size, limit
 ) -> ObraListResponse:
     """Fallback: lista a partir da tabela `obras` (sem campos de risco do ML)."""
-    query = db.table("obras").select(_OBRAS_FALLBACK_FIELDS, count="exact")
+    query = db.table("obras").select(_OBRAS_FALLBACK_FIELDS, count=CountMethod.exact)
     if situacao:
         query = query.eq("situacao", situacao)
     if secretaria:
@@ -105,7 +106,7 @@ async def listar_obras(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
-    query = db.table("mv_obras_resumo").select("*", count="exact")  # pyright: ignore[reportArgumentType]
+    query = db.table("mv_obras_resumo").select("*", count=CountMethod.exact)
 
     if data_inicio:
         query = query.gte("data_inicio", data_inicio.isoformat())

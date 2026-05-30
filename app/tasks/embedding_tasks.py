@@ -6,7 +6,7 @@ from postgrest.exceptions import APIError
 
 from app.tasks.celery_app import celery_app, backoff_countdown
 from app.core.config import get_settings
-from app.core.database import get_supabase_client
+from app.core.database import first, get_supabase_client, rows
 from app.core.locks import release_lock
 
 log = logging.getLogger("tasks.embedding")
@@ -67,12 +67,10 @@ def _carregar_obras(client) -> dict[str, dict]:
     """Lookup `id_obra -> resumo` para enriquecimento. Resiliente: se a view
     estiver stale/não-populada, segue sem enriquecer (degrada com elegância)."""
     try:
-        linhas = (
+        linhas = rows(
             client.table("mv_obras_resumo")
             .select("id,nome,secretaria,bairro,nivel_risco,prob_atraso,situacao")
             .execute()
-            .data
-            or []
         )
         return {o["id"]: o for o in linhas}
     except APIError as exc:
@@ -115,15 +113,13 @@ def task_gerar_embeddings(self, forcar: bool = False) -> dict:
         else:
             ja_indexados = {
                 r["id_contrato"]
-                for r in (client.table("documentos_rag").select("id_contrato").execute().data or [])
+                for r in rows(client.table("documentos_rag").select("id_contrato").execute())
                 if r.get("id_contrato")
             }
-        contratos = (
+        contratos = rows(
             client.table("contratos")
             .select("id,id_obra,objeto,modalidade,situacao,valor_global,valor_final")
             .execute()
-            .data
-            or []
         )
         obras_por_id = _carregar_obras(client)
 
@@ -131,14 +127,14 @@ def task_gerar_embeddings(self, forcar: bool = False) -> dict:
         for contrato in contratos:
             if contrato["id"] in ja_indexados:
                 continue
-            obra = obras_por_id.get(contrato.get("id_obra"))
+            obra = obras_por_id.get(contrato.get("id_obra") or "")
             texto = _montar_texto(contrato, obra)
             if not texto.strip():
                 continue
 
             metadata = _metadata(contrato, obra)
             for chunk in splitter.split_text(texto):
-                doc = (
+                doc = first(
                     client.table("documentos_rag")
                     .insert(
                         {
@@ -150,7 +146,9 @@ def task_gerar_embeddings(self, forcar: bool = False) -> dict:
                     )
                     .execute()
                 )
-                doc_id = doc.data[0]["id"]
+                if doc is None:
+                    continue
+                doc_id = doc["id"]
                 vetor = model.encode(chunk, normalize_embeddings=True).tolist()
                 client.table("embeddings").insert(
                     {

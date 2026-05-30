@@ -5,7 +5,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from supabase import Client
 
-from app.core.database import get_supabase_client
+from app.core.database import get_supabase_client, rows
 from app.routers.auth import get_current_user
 from app.schemas.dashboard import (
     AlertaObraItem,
@@ -38,18 +38,18 @@ async def metricas_globais(
         query = query.gte("data_inicio", data_inicio.isoformat())
     if data_fim:
         query = query.lte("data_inicio", data_fim.isoformat())
-    rows: list[dict[str, Any]] = query.limit(10000).execute().data or []
+    linhas = rows(query.limit(10000).execute())
 
     execucoes = [
-        r["percentual_executado"] for r in rows if r.get("percentual_executado") is not None
+        r["percentual_executado"] for r in linhas if r.get("percentual_executado") is not None
     ]
     return DashboardResponse(
-        total_obras=len(rows),
-        valor_total=float(sum(r.get("valor_contrato") or 0 for r in rows)),
+        total_obras=len(linhas),
+        valor_total=float(sum(r.get("valor_contrato") or 0 for r in linhas)),
         media_execucao_pct=round(sum(execucoes) / len(execucoes), 2) if execucoes else 0.0,
-        obras_em_andamento=sum(1 for r in rows if r.get("situacao") == "Em andamento"),
-        obras_concluidas=sum(1 for r in rows if r.get("situacao") == "Concluída"),
-        obras_atrasadas=sum(1 for r in rows if (r.get("dias_atraso") or 0) > 0),
+        obras_em_andamento=sum(1 for r in linhas if r.get("situacao") == "Em andamento"),
+        obras_concluidas=sum(1 for r in linhas if r.get("situacao") == "Concluída"),
+        obras_atrasadas=sum(1 for r in linhas if (r.get("dias_atraso") or 0) > 0),
     )
 
 
@@ -61,7 +61,7 @@ async def distribuicao_por_status(
     result = db.table("mv_obras_resumo").select("status, valor_contrato").execute()
 
     groups: dict[str, dict[str, Any]] = defaultdict(lambda: {"quantidade": 0, "valor_total": 0.0})
-    for obra in result.data:
+    for obra in rows(result):
         label = obra.get("status") or "indefinido"
         groups[label]["quantidade"] += 1
         groups[label]["valor_total"] += obra.get("valor_contrato") or 0.0
@@ -77,7 +77,7 @@ async def distribuicao_por_secretaria(
     result = db.table("mv_obras_resumo").select("secretaria, valor_contrato").execute()
 
     groups: dict[str, dict[str, Any]] = defaultdict(lambda: {"quantidade": 0, "valor_total": 0.0})
-    for obra in result.data:
+    for obra in rows(result):
         label = obra.get("secretaria") or "Não informado"
         groups[label]["quantidade"] += 1
         groups[label]["valor_total"] += obra.get("valor_contrato") or 0.0
@@ -93,7 +93,7 @@ async def evolucao_mensal(
     result = db.table("mv_obras_resumo").select("data_inicio, status").execute()
 
     groups: dict[str, dict[str, int]] = defaultdict(lambda: {"iniciadas": 0, "concluidas": 0})
-    for obra in result.data:
+    for obra in rows(result):
         raw = obra.get("data_inicio")
         if not raw:
             continue

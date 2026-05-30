@@ -4,7 +4,7 @@ from typing import Any, Mapping, Optional, cast
 from fastapi import APIRouter, Depends, Query
 from supabase import Client
 
-from app.core.database import get_supabase_client
+from app.core.database import get_supabase_client, rows
 from app.routers.auth import get_current_user
 from app.schemas.mapa import (
     GeoJSONFeature,
@@ -43,7 +43,7 @@ async def obras_geojson(
             lookup = lookup.gte("data_inicio", data_inicio.isoformat())
         if data_fim:
             lookup = lookup.lte("data_inicio", data_fim.isoformat())
-        ids_filtrados = [row["id"] for row in (lookup.execute().data or [])]
+        ids_filtrados = [row["id"] for row in rows(lookup.execute())]
         if not ids_filtrados:
             return GeoJSONFeatureCollection(features=[])
 

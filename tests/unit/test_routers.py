@@ -359,7 +359,7 @@ def test_obter_contrato_not_found(client_with_auth):
     assert resp.status_code == 404
 
 
-def test_contratos_por_obra(client_with_auth):
+def test_contratos_router_por_obra(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [CONTRATO_FIXTURE]
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from typing import Any, Optional
 
 from fastapi import HTTPException
 from sqlalchemy import text
@@ -19,6 +20,21 @@ log = logging.getLogger(__name__)
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+def rows(result: Any) -> list[dict[str, Any]]:
+    """Extrai as linhas de uma resposta do Supabase como `list[dict]`.
+
+    Isola, em um único ponto, o tipo amplo (JSON) que o cliente Supabase
+    atribui a `.data` — evitando ruído de type-checking nos call sites.
+    """
+    return list(result.data or [])
+
+
+def first(result: Any) -> Optional[dict[str, Any]]:
+    """Primeira linha de uma resposta do Supabase, ou `None`."""
+    data = result.data or []
+    return data[0] if data else None
 
 
 def get_supabase_client() -> Client:
