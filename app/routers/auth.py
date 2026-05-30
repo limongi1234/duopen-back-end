@@ -33,7 +33,13 @@ def _ensure_ok(result: Any, action: str) -> Any:
     return result
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cadastrar usuário",
+    description="Cria um usuário com perfil **readonly** (menor privilégio). Senha gravada com hash bcrypt. **400** se o e-mail já existir.",
+)
 async def register(body: UserCreate, db: Client = Depends(get_supabase_client)):
     existing = _ensure_ok(
         db.table("usuarios").select("id").eq("email", body.email).execute(),
@@ -69,7 +75,12 @@ async def register(body: UserCreate, db: Client = Depends(get_supabase_client)):
     )
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    summary="Login",
+    description="Autentica por e-mail/senha e retorna `access_token` + `refresh_token` (o perfil viaja no JWT). **401** se as credenciais forem inválidas.",
+)
 async def login(body: LoginRequest, db: Client = Depends(get_supabase_client)):
     result = _ensure_ok(
         db.table("usuarios").select("*").eq("email", body.email).execute(),
@@ -87,7 +98,12 @@ async def login(body: LoginRequest, db: Client = Depends(get_supabase_client)):
     )
 
 
-@router.post("/refresh", response_model=TokenResponse)
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+    summary="Renovar tokens",
+    description="Gera novos `access_token`/`refresh_token` a partir de um refresh token válido. **401** se inválido/expirado.",
+)
 async def refresh(body: RefreshRequest):
     try:
         payload = decode_token(body.refresh_token)
@@ -127,7 +143,12 @@ def require_perfil(*perfis_permitidos: str):
     return checker
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    summary="Usuário autenticado",
+    description="Retorna os dados (incl. `perfil`) do usuário do token. Usado pelo frontend para gatear a navegação.",
+)
 async def me(
     db: Client = Depends(get_supabase_client),
     user: dict = Depends(get_current_user),

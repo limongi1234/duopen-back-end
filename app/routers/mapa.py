@@ -19,7 +19,7 @@ router = APIRouter()
 _MAPA_FIELDS = "id, nome, situacao, nivel_risco, bairro, valor_contrato, latitude, longitude"
 
 
-@router.get("/", response_model=GeoJSONFeatureCollection)
+@router.get("/", response_model=GeoJSONFeatureCollection, summary="Obras em GeoJSON", description="Obras geolocalizadas como FeatureCollection, com filtros por situação, nível de risco, secretaria e período.")
 async def obras_geojson(
     obra_status: Optional[str] = Query(None, alias="status"),
     nivel_risco: Optional[str] = Query(None),
@@ -94,7 +94,7 @@ async def obras_geojson(
 
 # ── endpoint legado mantido para compatibilidade ──────────────────────────────
 
-@router.get("/obras")
+@router.get("/obras", summary="Obras geolocalizadas (legado)", description="Lista bruta de obras com latitude/longitude (endpoint legado).")
 async def obras_geolocalizadas(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),

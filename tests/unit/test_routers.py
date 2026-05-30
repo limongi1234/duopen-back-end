@@ -665,18 +665,27 @@ def test_obter_fornecedor_not_found(client_with_auth):
 
 def test_obras_do_fornecedor(client_with_auth):
     client, db = client_with_auth
-    obra_ref = {"obra_id": "obra-1", "obras": {"id": "obra-1", "nome": "Obra A", "status": "em_andamento"}}
-    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [obra_ref]
+    forn_tbl = MagicMock()
+    forn_tbl.select.return_value.eq.return_value.execute.return_value.data = [{"id": "f1"}]
+    contr_tbl = MagicMock()
+    contr_tbl.select.return_value.eq.return_value.execute.return_value.data = [
+        {"id": "c1", "objeto": "Obra A", "id_obra": "obra-1", "situacao": "Em andamento"}
+    ]
+    db.table.side_effect = lambda name: {"fornecedores": forn_tbl, "contratos": contr_tbl}[name]
 
     resp = client.get("/api/v1/fornecedores/12345678000195/obras")
 
     assert resp.status_code == 200
-    assert resp.json()[0]["obra_id"] == "obra-1"
+    assert resp.json()[0]["id"] == "c1"
+    forn_tbl.select.return_value.eq.assert_called_with("cnpj", "12345678000195")
+    contr_tbl.select.return_value.eq.assert_called_with("id_fornecedor", "f1")
 
 
 def test_obras_do_fornecedor_vazio(client_with_auth):
     client, db = client_with_auth
-    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
+    forn_tbl = MagicMock()
+    forn_tbl.select.return_value.eq.return_value.execute.return_value.data = []  # CNPJ inexistente
+    db.table.side_effect = lambda name: {"fornecedores": forn_tbl}[name]
 
     resp = client.get("/api/v1/fornecedores/99999999000199/obras")
 

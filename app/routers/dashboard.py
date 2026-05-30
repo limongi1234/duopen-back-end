@@ -17,7 +17,7 @@ from app.schemas.dashboard import (
 router = APIRouter()
 
 
-@router.get("/", response_model=DashboardResponse)
+@router.get("/", response_model=DashboardResponse, summary="Métricas globais", description="Métricas agregadas calculadas da tabela `obras`, com recorte opcional por período (`data_inicio`/`data_fim`).")
 async def metricas_globais(
     data_inicio: Optional[date] = Query(
         None, description="Considera obras com data de início a partir desta data"
@@ -53,7 +53,7 @@ async def metricas_globais(
     )
 
 
-@router.get("/distribuicao-status", response_model=list[DistribuicaoItem])
+@router.get("/distribuicao-status", response_model=list[DistribuicaoItem], summary="Distribuição por status", description="Quantidade e valor total de obras agrupados por situação.")
 async def distribuicao_por_status(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
@@ -69,7 +69,7 @@ async def distribuicao_por_status(
     return [DistribuicaoItem(label=k, **v) for k, v in groups.items()]
 
 
-@router.get("/distribuicao-secretaria", response_model=list[DistribuicaoItem])
+@router.get("/distribuicao-secretaria", response_model=list[DistribuicaoItem], summary="Distribuição por secretaria", description="Quantidade e valor total de obras agrupados por secretaria.")
 async def distribuicao_por_secretaria(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
@@ -85,7 +85,7 @@ async def distribuicao_por_secretaria(
     return [DistribuicaoItem(label=k, **v) for k, v in groups.items()]
 
 
-@router.get("/evolucao", response_model=list[EvolucaoMensalItem])
+@router.get("/evolucao", response_model=list[EvolucaoMensalItem], summary="Evolução mensal", description="Obras iniciadas e concluídas por mês.")
 async def evolucao_mensal(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
@@ -108,7 +108,7 @@ async def evolucao_mensal(
     )
 
 
-@router.get("/alertas", response_model=list[AlertaObraItem])
+@router.get("/alertas", response_model=list[AlertaObraItem], summary="Obras em alerta", description="Obras com nível de risco alto/crítico (limite configurável).")
 async def obras_em_alerta(
     limit: int = Query(20, ge=1, le=100),
     db: Client = Depends(get_supabase_client),
@@ -127,7 +127,7 @@ async def obras_em_alerta(
 
 # ── endpoints legados mantidos para compatibilidade ───────────────────────────
 
-@router.get("/resumo")
+@router.get("/resumo", summary="Resumo (legado)", description="Totais simples de obras (endpoint legado).")
 async def resumo_dashboard(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
@@ -146,7 +146,7 @@ async def resumo_dashboard(
     }
 
 
-@router.get("/eficiencia")
+@router.get("/eficiencia", summary="Ranking de eficiência", description="Top obras por score de eficiência (predições de ML).")
 async def ranking_eficiencia(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),

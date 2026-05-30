@@ -1,13 +1,14 @@
 import math
 from typing import Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class FornecedorResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     cnpj: str
-    nome: str
+    # Aceita `razao_social` (da view) ou `nome` na entrada; serializa como `nome`.
+    nome: str = Field(validation_alias=AliasChoices("razao_social", "nome"))
     total_contratos: int
     valor_total: float
     taxa_aditivo: Optional[float] = None

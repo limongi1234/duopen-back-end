@@ -71,7 +71,17 @@ def _listar_de_obras(
     )
 
 
-@router.get("/", response_model=ObraListResponse)
+@router.get(
+    "/",
+    response_model=ObraListResponse,
+    summary="Listar obras",
+    description=(
+        "Lista obras (view `mv_obras_resumo`, com campos de risco) com filtros por "
+        "situação, secretaria, bairro, nível de risco e **período** (`data_inicio`/"
+        "`data_fim`), ordenação (`sort`, ex.: `-prob_atraso`), paginação ou `limit`. "
+        "Resiliente: cai para a tabela `obras` se a view não estiver populada."
+    ),
+)
 async def listar_obras(
     situacao: Optional[str] = Query(None, alias="status"),
     secretaria: Optional[str] = Query(None),
@@ -156,7 +166,7 @@ async def listar_obras(
         )
 
 
-@router.get("/{obra_id}", response_model=ObraDetalheResponse)
+@router.get("/{obra_id}", response_model=ObraDetalheResponse, summary="Detalhe da obra", description="Retorna uma obra por id. **404** se não encontrada.")
 async def obter_obra(
     obra_id: str,
     db: Client = Depends(get_supabase_client),
@@ -168,7 +178,7 @@ async def obter_obra(
     return result.data[0]
 
 
-@router.get("/{obra_id}/contratos")
+@router.get("/{obra_id}/contratos", summary="Contratos da obra", description="Lista os contratos vinculados à obra.")
 async def contratos_por_obra(
     obra_id: str,
     db: Client = Depends(get_supabase_client),
@@ -178,7 +188,7 @@ async def contratos_por_obra(
     return result.data
 
 
-@router.get("/{obra_id}/aditivos")
+@router.get("/{obra_id}/aditivos", summary="Aditivos da obra", description="Lista os aditivos vinculados à obra.")
 async def aditivos_por_obra(
     obra_id: str,
     db: Client = Depends(get_supabase_client),
@@ -188,7 +198,7 @@ async def aditivos_por_obra(
     return result.data
 
 
-@router.post("/", response_model=ObraResponse, status_code=http_status.HTTP_201_CREATED)
+@router.post("/", response_model=ObraResponse, status_code=http_status.HTTP_201_CREATED, summary="Criar obra")
 async def criar_obra(
     body: ObraCreate,
     db: Client = Depends(get_supabase_client),
@@ -198,7 +208,7 @@ async def criar_obra(
     return result.data[0]
 
 
-@router.patch("/{obra_id}", response_model=ObraResponse)
+@router.patch("/{obra_id}", response_model=ObraResponse, summary="Atualizar obra", description="Atualização parcial. **404** se não encontrada.")
 async def atualizar_obra(
     obra_id: str,
     body: ObraUpdate,
@@ -212,7 +222,7 @@ async def atualizar_obra(
     return result.data[0]
 
 
-@router.delete("/{obra_id}", status_code=http_status.HTTP_204_NO_CONTENT)
+@router.delete("/{obra_id}", status_code=http_status.HTTP_204_NO_CONTENT, summary="Remover obra")
 async def deletar_obra(
     obra_id: str,
     db: Client = Depends(get_supabase_client),

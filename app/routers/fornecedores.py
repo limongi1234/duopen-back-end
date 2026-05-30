@@ -10,7 +10,12 @@ from app.schemas.fornecedores import FornecedorResponse, FornecedorRankingRespon
 router = APIRouter()
 
 
-@router.get("/", response_model=FornecedorRankingResponse)
+@router.get(
+    "/",
+    response_model=FornecedorRankingResponse,
+    summary="Ranking de fornecedores",
+    description="Ranking por nº de contratos, com filtros opcionais por taxa de aditivo e prob. média de atraso, e paginação.",
+)
 async def ranking_fornecedores(
     taxa_aditivo_max: Optional[float] = Query(None, ge=0, le=1),
     media_prob_atraso_max: Optional[float] = Query(None, ge=0, le=1),
@@ -42,22 +47,35 @@ async def ranking_fornecedores(
     )
 
 
-@router.get("/{cnpj}/obras")
+@router.get(
+    "/{cnpj}/obras",
+    summary="Contratos do fornecedor",
+    description="Lista os contratos de um fornecedor (identificado por CNPJ).",
+)
 async def obras_do_fornecedor(
     cnpj: str,
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
+    # cnpj -> id do fornecedor (tabela `fornecedores`) -> contratos por id_fornecedor.
+    fornecedor = db.table("fornecedores").select("id").eq("cnpj", cnpj).execute().data
+    if not fornecedor:
+        return []
     result = (
         db.table("contratos")
-        .select("obra_id, obras(id, nome, status, valor_contrato, data_prevista_fim)")
-        .eq("cnpj_fornecedor", cnpj)
+        .select("id, numero, objeto, situacao, valor_global, valor_final, id_obra")
+        .eq("id_fornecedor", fornecedor[0]["id"])
         .execute()
     )
     return result.data
 
 
-@router.get("/{cnpj}", response_model=FornecedorResponse)
+@router.get(
+    "/{cnpj}",
+    response_model=FornecedorResponse,
+    summary="Perfil do fornecedor",
+    description="Retorna o perfil/ranking de um fornecedor por CNPJ. **404** se não encontrado.",
+)
 async def perfil_fornecedor(
     cnpj: str,
     db: Client = Depends(get_supabase_client),
