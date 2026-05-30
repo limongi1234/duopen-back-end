@@ -258,7 +258,7 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 |---|---|---|
 | GET | `/` | Visão geral |
 | GET | `/resumo` | Métricas-resumo |
-| GET | `/eficiencia` | Ranking de eficiência |
+| GET | `/eficiencia` | Ranking de obras por `ieop_score` (IEOP), maior primeiro (`limit`) |
 | GET | `/distribuicao-status` | Distribuição por status |
 | GET | `/distribuicao-secretaria` | Distribuição por secretaria |
 | GET | `/evolucao` | Evolução mensal |

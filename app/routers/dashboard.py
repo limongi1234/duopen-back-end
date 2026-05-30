@@ -12,6 +12,7 @@ from app.schemas.dashboard import (
     DashboardResponse,
     DistribuicaoItem,
     EvolucaoMensalItem,
+    RankingEficienciaItem,
 )
 
 router = APIRouter()
@@ -146,10 +147,23 @@ async def resumo_dashboard(
     }
 
 
-@router.get("/eficiencia", summary="Ranking de eficiência", description="Top obras por score de eficiência (predições de ML).")
+@router.get(
+    "/eficiencia",
+    response_model=list[RankingEficienciaItem],
+    summary="Ranking de eficiência (IEOP)",
+    description="Top obras por `ieop_score` (Índice de Eficiência de Obras Públicas), maior primeiro.",
+)
 async def ranking_eficiencia(
+    limit: int = Query(10, ge=1, le=100),
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
-    result = db.table("ml_predicoes").select("*").order("score_eficiencia", desc=True).limit(10).execute()
-    return result.data
+    result = (
+        db.table("mv_obras_resumo")
+        .select("id, nome, situacao, secretaria, valor_contrato, ieop_score, ieop_classe")
+        .not_.is_("ieop_score", "null")
+        .order("ieop_score", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return rows(result)

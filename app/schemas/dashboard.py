@@ -31,3 +31,13 @@ class AlertaObraItem(BaseModel):
     bairro: Optional[str] = None
     valor_contrato: float
     data_prevista_fim: str
+
+
+class RankingEficienciaItem(BaseModel):
+    id: str
+    nome: str
+    ieop_score: float
+    ieop_classe: Optional[str] = None
+    situacao: Optional[str] = None
+    secretaria: Optional[str] = None
+    valor_contrato: Optional[float] = None

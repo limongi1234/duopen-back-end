@@ -474,13 +474,19 @@ def test_resumo_dashboard(client_with_auth):
 
 def test_ranking_eficiencia(client_with_auth):
     client, db = client_with_auth
-    db.table.return_value.select.return_value.order.return_value.limit.return_value.execute.return_value.data = [
-        {"obra_id": "o1", "score_eficiencia": 0.95}
+    # ranking real por ieop_score: select().not_.is_().order().limit().execute()
+    db.table.return_value.select.return_value.not_.is_.return_value.order.return_value.limit.return_value.execute.return_value.data = [
+        {"id": "o1", "nome": "Obra A", "ieop_score": 95.0, "ieop_classe": "Ótimo"}
     ]
 
     resp = client.get("/api/v1/dashboard/eficiencia")
 
     assert resp.status_code == 200
+    body = resp.json()
+    assert body[0]["id"] == "o1"
+    assert body[0]["ieop_score"] == 95.0
+    assert body[0]["ieop_classe"] == "Ótimo"
+    db.table.return_value.select.return_value.not_.is_.return_value.order.assert_called_with("ieop_score", desc=True)
 
 
 # Linhas da tabela `obras` (nova fonte do dashboard)
