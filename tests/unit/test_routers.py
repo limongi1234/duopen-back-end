@@ -240,6 +240,57 @@ def test_obter_obra_not_found(client_with_auth):
     assert resp.status_code == 404
 
 
+def test_obter_obra_expoe_campos_coleta(client_with_auth):
+    client, db = client_with_auth
+    obra = {
+        **OBRA_FIXTURE,
+        "cnpj_executora": "12.345.678/0001-95",
+        "num_contrato": "010/2025SEMINF",
+        "num_licitacao": "PE-001/2025",
+        "ano_conclusao": 2014,
+        "percentual_executado_financeiro": 73.5,
+    }
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [obra]
+
+    resp = client.get("/api/v1/obras/obra-1")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["cnpj_executora"] == "12.345.678/0001-95"
+    assert body["num_contrato"] == "010/2025SEMINF"
+    assert body["num_licitacao"] == "PE-001/2025"
+    assert body["ano_conclusao"] == 2014
+    assert body["percentual_executado_financeiro"] == 73.5
+
+
+def test_obter_obra_campos_coleta_nulos(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [OBRA_FIXTURE]
+
+    resp = client.get("/api/v1/obras/obra-1")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    # campos novos são nullable -> null quando ausentes
+    assert body["cnpj_executora"] is None
+    assert body["ano_conclusao"] is None
+    assert body["percentual_executado_financeiro"] is None
+
+
+def test_listar_obras_expoe_campos_coleta(client_with_auth):
+    client, db = client_with_auth
+    obra = {**OBRA_FIXTURE, "ano_conclusao": 2020, "num_contrato": "X-1"}
+    _mock_lista(db, [obra], total=1)
+
+    resp = client.get("/api/v1/obras/")
+
+    assert resp.status_code == 200
+    item = resp.json()["items"][0]
+    assert item["ano_conclusao"] == 2020
+    assert item["num_contrato"] == "X-1"
+    assert "percentual_executado_financeiro" in item
+
+
 def test_contratos_por_obra(client_with_auth):
     client, db = client_with_auth
     contrato = {"id": "cont-1", "obra_id": "obra-1", "valor": 50000.0}

@@ -4,6 +4,20 @@ from typing import Optional
 from datetime import date
 
 
+class ObraColetaFields(BaseModel):
+    """Campos adicionais produzidos pelo ETL de coleta (PRs #5/#6/#9).
+
+    Todos **nullable**: só vêm preenchidos no grupo legado e após as migrations +
+    pipeline. Tratar ausência como "não informado".
+    """
+
+    cnpj_executora: Optional[str] = None
+    num_contrato: Optional[str] = None
+    num_licitacao: Optional[str] = None
+    ano_conclusao: Optional[int] = None  # ano (ex.: 2014), não data
+    percentual_executado_financeiro: Optional[float] = None
+
+
 class ObraBase(BaseModel):
     nome: str
     descricao: Optional[str] = None
@@ -34,7 +48,7 @@ class ObraUpdate(BaseModel):
     nivel_risco: Optional[str] = None
 
 
-class ObraResponse(ObraBase):
+class ObraResponse(ObraBase, ObraColetaFields):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
@@ -45,7 +59,7 @@ class ObraDetalheResponse(ObraResponse):
     pass
 
 
-class ObraResumoResponse(BaseModel):
+class ObraResumoResponse(ObraColetaFields):
     """Item da listagem, espelhando a view `mv_obras_resumo`."""
 
     model_config = ConfigDict(from_attributes=True)

@@ -226,7 +226,7 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 | Método | Rota | Descrição |
 |---|---|---|
 | GET | `/` | Lista obras (filtros: `status`, `secretaria`, `bairro`, `nivel_risco`; paginação `page`/`size`) |
-| GET | `/{obra_id}` | Detalhe da obra |
+| GET | `/{obra_id}` | Detalhe da obra (inclui campos de coleta: `cnpj_executora`, `num_contrato`, `num_licitacao`, `ano_conclusao`, `percentual_executado_financeiro` — todos nullable) |
 | GET | `/{obra_id}/contratos` | Contratos da obra |
 | GET | `/{obra_id}/aditivos` | Aditivos da obra |
 | POST | `/` | Cria obra |
