@@ -295,10 +295,21 @@ Agente de IA generativa com RAG (LangChain + pgvector/Supabase) sobre contratos 
 
 ## Testes
 
+Dependências de teste/dev em [requirements-dev.txt](requirements-dev.txt)
+(`pip install -r requirements-dev.txt`). Supabase e LangChain/Gemini são
+**mockados** — os testes não acessam rede nem baixam modelos.
+
 ```bash
-pytest -q                       # suíte completa
-pytest --cov=app --cov-report=term-missing   # com cobertura
+pytest -q                                          # suíte completa (137 testes)
+pytest --cov=app --cov-report=term-missing         # com relatório de cobertura
+pytest tests/ --cov=app --cov-fail-under=80         # gate de 80% (igual ao CI)
+mypy app/ tests/                                    # type-check (sem erros)
 ```
+
+Cobertura atual: **~93%** (mínimo exigido: 80%). O gate roda automaticamente no
+**GitHub Actions** ([.github/workflows/backend.yml](.github/workflows/backend.yml))
+a cada push/PR em `main`/`master`, com um serviço Redis e os segredos
+(`SUPABASE_URL`, `SUPABASE_KEY`, `SECRET_KEY`).
 
 ## Jobs assíncronos (Celery + Redis)
 
