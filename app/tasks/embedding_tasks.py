@@ -1,4 +1,7 @@
 import logging
+from typing import Any, Optional
+
+from postgrest.exceptions import APIError
 
 from app.tasks.celery_app import celery_app, backoff_countdown
 from app.core.config import get_settings
@@ -10,16 +13,42 @@ CHUNK_SIZE = 512   # caracteres por chunk
 CHUNK_OVERLAP = 50  # sobreposição entre chunks
 
 
-def _montar_texto(contrato: dict) -> str:
-    """Monta o texto indexável de um contrato a partir dos campos disponíveis."""
-    partes = [
-        f"Objeto: {contrato.get('objeto')}" if contrato.get("objeto") else "",
-        f"Modalidade: {contrato.get('modalidade')}" if contrato.get("modalidade") else "",
-        f"Situação: {contrato.get('situacao')}" if contrato.get("situacao") else "",
-        f"Valor global: R$ {contrato.get('valor_global')}" if contrato.get("valor_global") else "",
-        f"Valor final: R$ {contrato.get('valor_final')}" if contrato.get("valor_final") else "",
+def _linha(rotulo: str, valor: Any) -> Optional[str]:
+    return f"{rotulo}: {valor}" if valor not in (None, "") else None
+
+
+def _montar_texto(contrato: dict, obra: Optional[dict]) -> str:
+    """Texto indexável do contrato, enriquecido com o contexto da obra vinculada."""
+    linhas = [
+        _linha("Objeto do contrato", contrato.get("objeto")),
+        _linha("Modalidade", contrato.get("modalidade")),
+        _linha("Situação do contrato", contrato.get("situacao")),
+        _linha("Valor global (R$)", contrato.get("valor_global")),
+        _linha("Valor final (R$)", contrato.get("valor_final")),
     ]
-    return "\n".join(p for p in partes if p)
+    if obra:
+        linhas += [
+            _linha("Obra vinculada", obra.get("nome")),
+            _linha("Secretaria", obra.get("secretaria")),
+            _linha("Bairro", obra.get("bairro")),
+            _linha("Situação da obra", obra.get("situacao")),
+            _linha("Nível de risco (ML)", obra.get("nivel_risco")),
+            _linha("Probabilidade de atraso", obra.get("prob_atraso")),
+        ]
+    return "\n".join(linha for linha in linhas if linha)
+
+
+def _metadata(contrato: dict, obra: Optional[dict]) -> dict:
+    obra = obra or {}
+    return {
+        "id_contrato": contrato["id"],
+        "id_obra": contrato.get("id_obra"),
+        "modalidade": contrato.get("modalidade"),
+        "situacao_contrato": contrato.get("situacao"),
+        "obra": obra.get("nome"),
+        "secretaria": obra.get("secretaria"),
+        "nivel_risco": obra.get("nivel_risco"),
+    }
 
 
 def _vetor_para_pgvector(vetor: list[float]) -> str:
@@ -27,9 +56,28 @@ def _vetor_para_pgvector(vetor: list[float]) -> str:
     return "[" + ",".join(str(v) for v in vetor) + "]"
 
 
+def _carregar_obras(client) -> dict[str, dict]:
+    """Lookup `id_obra -> resumo` para enriquecimento. Resiliente: se a view
+    estiver stale/não-populada, segue sem enriquecer (degrada com elegância)."""
+    try:
+        linhas = (
+            client.table("mv_obras_resumo")
+            .select("id,nome,secretaria,bairro,nivel_risco,prob_atraso,situacao")
+            .execute()
+            .data
+            or []
+        )
+        return {o["id"]: o for o in linhas}
+    except APIError as exc:
+        log.warning("Enriquecimento indisponível (mv_obras_resumo): %s", exc)
+        return {}
+
+
 @celery_app.task(bind=True, max_retries=3)
 def task_gerar_embeddings(self) -> dict:
-    """Indexa em `documentos_rag`/`embeddings` os contratos ainda sem embedding.
+    """Indexa em `documentos_rag`/`embeddings` os contratos ainda sem embedding,
+    enriquecendo cada documento com o contexto da obra vinculada (nome, secretaria,
+    bairro, nível de risco do ML).
 
     Modelo: paraphrase-multilingual-MiniLM-L12-v2 (384 dims).
     """
@@ -52,20 +100,23 @@ def task_gerar_embeddings(self) -> dict:
         }
         contratos = (
             client.table("contratos")
-            .select("id,objeto,modalidade,situacao,valor_global,valor_final")
+            .select("id,id_obra,objeto,modalidade,situacao,valor_global,valor_final")
             .execute()
             .data
             or []
         )
+        obras_por_id = _carregar_obras(client)
 
         total_chunks = 0
         for contrato in contratos:
             if contrato["id"] in ja_indexados:
                 continue
-            texto = _montar_texto(contrato)
+            obra = obras_por_id.get(contrato.get("id_obra"))
+            texto = _montar_texto(contrato, obra)
             if not texto.strip():
                 continue
 
+            metadata = _metadata(contrato, obra)
             for chunk in splitter.split_text(texto):
                 doc = (
                     client.table("documentos_rag")
@@ -73,10 +124,7 @@ def task_gerar_embeddings(self) -> dict:
                         {
                             "chunk_texto": chunk,
                             "id_contrato": contrato["id"],
-                            "metadata": {
-                                "modalidade": contrato.get("modalidade"),
-                                "situacao": contrato.get("situacao"),
-                            },
+                            "metadata": metadata,
                             "tokens": len(chunk.split()),
                         }
                     )

@@ -49,7 +49,7 @@ def test_run_ml_analysis_retries_on_error():
     mock_log.error.assert_called_once()
 
 
-def test_task_gerar_embeddings_success():
+def test_task_gerar_embeddings_enriquece_com_obra():
     from unittest.mock import patch
     import app.tasks.embedding_tasks as emb
 
@@ -59,18 +59,30 @@ def test_task_gerar_embeddings_success():
     docs_tbl.insert.return_value.execute.return_value.data = [{"id": "doc1"}]
     contratos_tbl = MagicMock()
     contratos_tbl.select.return_value.execute.return_value.data = [
-        {"id": "c1", "objeto": "Obra X", "modalidade": "Pregão",
+        {"id": "c1", "id_obra": "o1", "objeto": "Pavimentação", "modalidade": "Pregão",
          "situacao": "Em andamento", "valor_global": 100.0, "valor_final": 90.0}
+    ]
+    mv_tbl = MagicMock()
+    mv_tbl.select.return_value.execute.return_value.data = [
+        {"id": "o1", "nome": "Escola Municipal", "secretaria": "Educação",
+         "bairro": "Centro", "nivel_risco": "alto", "prob_atraso": 0.9, "situacao": "Em andamento"}
     ]
     emb_tbl = MagicMock()
     client.table.side_effect = lambda name: {
-        "documentos_rag": docs_tbl, "contratos": contratos_tbl, "embeddings": emb_tbl
+        "documentos_rag": docs_tbl, "contratos": contratos_tbl,
+        "mv_obras_resumo": mv_tbl, "embeddings": emb_tbl,
     }[name]
 
     model = MagicMock()
     model.encode.return_value.tolist.return_value = [0.1] * 384
+    captured = {}
+
+    def fake_split(texto):
+        captured["texto"] = texto
+        return ["chunk1"]
+
     splitter = MagicMock()
-    splitter.split_text.return_value = ["chunk1"]
+    splitter.split_text.side_effect = fake_split
 
     with patch("app.tasks.embedding_tasks.get_supabase_client", return_value=client), \
          patch("sentence_transformers.SentenceTransformer", return_value=model), \
@@ -79,6 +91,16 @@ def test_task_gerar_embeddings_success():
 
     assert result == {"status": "ok", "chunks": 1}
     emb_tbl.insert.assert_called_once()
+    # texto indexado enriquecido com contexto da obra
+    assert "Escola Municipal" in captured["texto"]
+    assert "Educação" in captured["texto"]
+    assert "alto" in captured["texto"]
+    # metadata enriquecida
+    meta = docs_tbl.insert.call_args[0][0]["metadata"]
+    assert meta["id_obra"] == "o1"
+    assert meta["secretaria"] == "Educação"
+    assert meta["nivel_risco"] == "alto"
+    assert meta["obra"] == "Escola Municipal"
 
 
 def test_task_gerar_embeddings_retries_on_error():
