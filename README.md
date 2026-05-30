@@ -225,7 +225,7 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 ### Obras — `/api/v1/obras`
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/` | Lista obras (filtros: `status`, `secretaria`, `bairro`, `nivel_risco`, período; `sort` ex.: `-ieop_score`; paginação). Inclui **IEOP** (`ieop_score`, `ieop_classe`, componentes) e campos de coleta |
+| GET | `/` | Lista obras (filtros: `status`, `secretaria`, `bairro`, `nivel_risco`, período; `sort` ex.: `-ieop_score`; paginação). Inclui **IEOP** (`ieop_score`, `ieop_classe`, `ieop_custo/atraso/recorrencia/execucao`) e **coleta** (`cnpj_executora`, `num_contrato`, `num_licitacao`, `ano_conclusao`, `percentual_executado_financeiro`) — todos nullable |
 | GET | `/{obra_id}` | Detalhe da obra. Inclui **IEOP/ML** (`ieop_score`, `ieop_classe`, `ieop_custo/atraso/recorrencia/execucao`, `tipo_sinapi`) e **coleta** (`cnpj_executora`, `num_contrato`, `num_licitacao`, `ano_conclusao`, `percentual_executado_financeiro`) — todos nullable |
 | GET | `/{obra_id}/contratos` | Contratos da obra |
 | GET | `/{obra_id}/aditivos` | Aditivos da obra |
