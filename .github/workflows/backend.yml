@@ -21,6 +21,9 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      # Torch CPU-only: evita ~2GB de pacotes CUDA (nvidia-*) sem GPU no CI.
+      # Instalado antes para satisfazer a dep do sentence-transformers sem puxar a build CUDA.
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -r requirements-dev.txt
       - run: pytest tests/ --cov=app --cov-report=term-missing --cov-fail-under=80
         env:
