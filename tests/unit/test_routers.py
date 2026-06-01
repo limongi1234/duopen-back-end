@@ -8,18 +8,23 @@ FAKE_USER = {"sub": "test-uid", "email": "test@example.com", "perfil": "admin"}
 OBRA_FIXTURE = {
     "id": "obra-1",
     "nome": "Obra Teste",
+    # nomes reais da tabela obras (detalhe/listagem)
+    "objeto": "Obra Teste",
+    "situacao": "em_andamento",
+    "criado_em": "2026-01-01T00:00:00",
+    # nomes do contrato de escrita (ObraResponse de create/update)
     "descricao": None,
+    "status": "em_andamento",
+    "created_at": "2026-01-01T00:00:00",
     "valor_contrato": 100000.0,
     "data_inicio": "2026-01-01",
     "data_prevista_fim": "2026-12-31",
-    "status": "em_andamento",
     "municipio": "Macaé",
     "secretaria": "Infraestrutura",
     "bairro": "Centro",
     "nivel_risco": "baixo",
     "latitude": None,
     "longitude": None,
-    "created_at": "2026-01-01T00:00:00",
 }
 
 
@@ -251,7 +256,28 @@ def test_obter_obra_found(client_with_auth):
     assert resp.json()["id"] == "obra-1"
     assert resp.json()["secretaria"] == "Infraestrutura"
     assert resp.json()["bairro"] == "Centro"
-    assert resp.json()["nivel_risco"] == "baixo"
+    assert resp.json()["situacao"] == "em_andamento"
+    assert resp.json()["objeto"] == "Obra Teste"
+
+
+def test_obter_obra_valor_nulo_nao_quebra(client_with_auth):
+    # cenário real reportado: valor_contrato null e sem created_at -> não pode dar 500
+    client, db = client_with_auth
+    obra = {
+        "id": "obra-9",
+        "nome": "Obra X",
+        "objeto": "X",
+        "situacao": "Indefinido",
+        "valor_contrato": None,
+        "criado_em": "2026-01-01T00:00:00",
+    }
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [obra]
+
+    resp = client.get("/api/v1/obras/obra-9")
+
+    assert resp.status_code == 200
+    assert resp.json()["valor_contrato"] is None
+    assert resp.json()["situacao"] == "Indefinido"
 
 
 def test_obter_obra_not_found(client_with_auth):

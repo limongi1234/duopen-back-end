@@ -73,8 +73,39 @@ class ObraResponse(ObraBase, ObraColetaFields, ObraIEOPFields):
     created_at: str
 
 
-class ObraDetalheResponse(ObraResponse):
-    pass
+class ObraDetalheResponse(ObraColetaFields, ObraIEOPFields):
+    """Detalhe da obra — espelha a tabela `obras` (campos nullable, exceto id/nome).
+
+    Inclui os campos de coleta (mixin) e de IEOP/ML (mixin).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    nome: str
+    objeto: Optional[str] = None
+    situacao: Optional[str] = None
+    tipo: Optional[str] = None
+    secretaria: Optional[str] = None
+    bairro: Optional[str] = None
+    endereco: Optional[str] = None
+    municipio: Optional[str] = None
+    uf: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    valor_contrato: Optional[float] = None
+    valor_aditivos: Optional[float] = None
+    valor_final: Optional[float] = None
+    percentual_executado: Optional[float] = None
+    dias_atraso: Optional[int] = None
+    qtd_aditivos: Optional[int] = None
+    area_m2: Optional[float] = None
+    data_inicio: Optional[str] = None
+    data_prevista_fim: Optional[str] = None
+    data_conclusao: Optional[str] = None
+    fonte_origem: Optional[str] = None
+    criado_em: Optional[str] = None
+    atualizado_em: Optional[str] = None
 
 
 class ObraResumoResponse(ObraColetaFields, ObraIEOPFields):
