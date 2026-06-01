@@ -1,5 +1,4 @@
 import logging
-from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
@@ -10,6 +9,7 @@ from typing import Optional
 
 from app.core.database import get_supabase_client
 from app.routers.auth import get_current_user
+from app.routers.common import Periodo, get_periodo
 from app.schemas.obras import (
     ObraCreate,
     ObraUpdate,
@@ -88,12 +88,6 @@ async def listar_obras(
     secretaria: Optional[str] = Query(None),
     bairro: Optional[str] = Query(None),
     nivel_risco: Optional[str] = Query(None),
-    data_inicio: Optional[date] = Query(
-        None, description="Filtra obras com data de início a partir desta data"
-    ),
-    data_fim: Optional[date] = Query(
-        None, description="Filtra obras com data de início até esta data"
-    ),
     sort: Optional[str] = Query(
         None,
         description="Campo de ordenação; prefixe '-' para descendente. Ex.: -prob_atraso",
@@ -103,15 +97,16 @@ async def listar_obras(
     limit: Optional[int] = Query(
         None, ge=1, le=100, description="Atalho: retorna apenas os N primeiros (ignora paginação)"
     ),
+    periodo: Periodo = Depends(get_periodo),
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
     query = db.table("mv_obras_resumo").select("*", count=CountMethod.exact)
 
-    if data_inicio:
-        query = query.gte("data_inicio", data_inicio.isoformat())
-    if data_fim:
-        query = query.lte("data_inicio", data_fim.isoformat())
+    if periodo.data_inicio:
+        query = query.gte("data_inicio", periodo.data_inicio.isoformat())
+    if periodo.data_fim:
+        query = query.lte("data_inicio", periodo.data_fim.isoformat())
     if situacao:
         query = query.eq("situacao", situacao)
     if secretaria:
@@ -158,8 +153,8 @@ async def listar_obras(
             situacao=situacao,
             secretaria=secretaria,
             bairro=bairro,
-            data_inicio=data_inicio,
-            data_fim=data_fim,
+            data_inicio=periodo.data_inicio,
+            data_fim=periodo.data_fim,
             sort=sort,
             page=page,
             size=size,

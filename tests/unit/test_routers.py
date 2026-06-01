@@ -180,6 +180,17 @@ def test_listar_obras_filtro_periodo(client_with_auth):
     db.table.return_value.select.return_value.gte.return_value.lte.assert_called_with("data_inicio", "2026-05-29")
 
 
+def test_listar_obras_data_vazia_nao_quebra(client_with_auth):
+    # frontend envia data_fim= (vazio) -> deve tratar como ausente, não 422
+    client, db = client_with_auth
+    _mock_lista(db, [OBRA_FIXTURE], total=1)
+
+    resp = client.get("/api/v1/obras/?data_inicio=&data_fim=")
+
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+
+
 def test_listar_obras_periodo_sem_resultados(client_with_auth):
     client, db = client_with_auth
     mock_result = MagicMock()
@@ -487,6 +498,28 @@ def test_ranking_eficiencia(client_with_auth):
     assert body[0]["ieop_score"] == 95.0
     assert body[0]["ieop_classe"] == "Ótimo"
     db.table.return_value.select.return_value.not_.is_.return_value.order.assert_called_with("ieop_score", desc=True)
+
+
+def test_ieop_stats(client_with_auth):
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.not_.is_.return_value.execute.return_value.data = [
+        {"id": "o1", "nome": "Obra A", "secretaria": "Infra", "ieop_score": 90.0, "ieop_classe": "Ótimo"},
+        {"id": "o2", "nome": "Obra B", "secretaria": "Infra", "ieop_score": 50.0, "ieop_classe": "Regular"},
+        {"id": "o3", "nome": "Obra C", "secretaria": "Saúde", "ieop_score": 30.0, "ieop_classe": "Ruim"},
+    ]
+
+    resp = client.get("/api/v1/dashboard/ieop")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["media_geral"] == 56.7  # (90+50+30)/3
+    assert body["classe_geral"] == "Regular"  # 56.7 -> Regular (>=40)
+    assert body["distribuicao"] == {"Ótimo": 1, "Regular": 1, "Ruim": 1}
+    # ranking por secretaria (Infra=70 > Saúde=30)
+    assert body["ranking_secretarias"][0]["secretaria"] == "Infra"
+    assert body["ranking_secretarias"][0]["media_ieop"] == 70.0
+    # piores obras (menor score primeiro)
+    assert body["piores_obras"][0]["id"] == "o3"
 
 
 # Linhas da tabela `obras` (nova fonte do dashboard)

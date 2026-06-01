@@ -256,8 +256,9 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 ### Dashboard — `/api/v1/dashboard`
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/` | Visão geral |
-| GET | `/resumo` | Métricas-resumo |
+| GET | `/` | Métricas globais (aceita período `data_inicio`/`data_fim`, tolerante a valor vazio) |
+| GET | `/ieop` | Resumo IEOP do município: `media_geral`, `classe_geral`, `distribuicao`, `ranking_secretarias`, `piores_obras` |
+| GET | `/resumo` | Métricas-resumo (legado) |
 | GET | `/eficiencia` | Ranking de obras por `ieop_score` (IEOP), maior primeiro (`limit`) |
 | GET | `/distribuicao-status` | Distribuição por status |
 | GET | `/distribuicao-secretaria` | Distribuição por secretaria |

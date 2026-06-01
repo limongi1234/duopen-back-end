@@ -1,31 +1,42 @@
-from collections import defaultdict
-from datetime import date
-from typing import Any, Optional
+from collections import Counter, defaultdict
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from supabase import Client
 
 from app.core.database import get_supabase_client, rows
 from app.routers.auth import get_current_user
+from app.routers.common import Periodo, get_periodo
 from app.schemas.dashboard import (
     AlertaObraItem,
     DashboardResponse,
     DistribuicaoItem,
     EvolucaoMensalItem,
+    IEOPStatsResponse,
+    PiorObraItem,
     RankingEficienciaItem,
+    SecretariaIEOP,
 )
 
 router = APIRouter()
 
 
+# Mesmos limiares do frontend (features/dashboard/ieop.ts) -> consistência de classe.
+def _classe_ieop(score: float) -> str:
+    if score >= 80:
+        return "Ótimo"
+    if score >= 60:
+        return "Bom"
+    if score >= 40:
+        return "Regular"
+    if score >= 20:
+        return "Ruim"
+    return "Crítico"
+
+
 @router.get("/", response_model=DashboardResponse, summary="Métricas globais", description="Métricas agregadas calculadas da tabela `obras`, com recorte opcional por período (`data_inicio`/`data_fim`).")
 async def metricas_globais(
-    data_inicio: Optional[date] = Query(
-        None, description="Considera obras com data de início a partir desta data"
-    ),
-    data_fim: Optional[date] = Query(
-        None, description="Considera obras com data de início até esta data"
-    ),
+    periodo: Periodo = Depends(get_periodo),
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
@@ -35,10 +46,10 @@ async def metricas_globais(
     query = db.table("obras").select(
         "situacao,valor_contrato,percentual_executado,dias_atraso"
     )
-    if data_inicio:
-        query = query.gte("data_inicio", data_inicio.isoformat())
-    if data_fim:
-        query = query.lte("data_inicio", data_fim.isoformat())
+    if periodo.data_inicio:
+        query = query.gte("data_inicio", periodo.data_inicio.isoformat())
+    if periodo.data_fim:
+        query = query.lte("data_inicio", periodo.data_fim.isoformat())
     linhas = rows(query.limit(10000).execute())
 
     execucoes = [
@@ -167,3 +178,59 @@ async def ranking_eficiencia(
         .execute()
     )
     return rows(result)
+
+
+@router.get(
+    "/ieop",
+    response_model=IEOPStatsResponse,
+    summary="Resumo IEOP do município",
+    description="Média geral do IEOP, classe, distribuição por classe, ranking de secretarias e piores obras.",
+)
+async def ieop_stats(
+    db: Client = Depends(get_supabase_client),
+    _: dict = Depends(get_current_user),
+):
+    linhas = rows(
+        db.table("obras")
+        .select("id, nome, secretaria, ieop_score, ieop_classe")
+        .not_.is_("ieop_score", "null")
+        .execute()
+    )
+
+    scores = [r["ieop_score"] for r in linhas if r.get("ieop_score") is not None]
+    media = round(sum(scores) / len(scores), 1) if scores else 0.0
+
+    distribuicao = Counter(r["ieop_classe"] for r in linhas if r.get("ieop_classe"))
+
+    por_secretaria: dict[str, list[float]] = defaultdict(list)
+    for r in linhas:
+        sec = r.get("secretaria")
+        if sec and r.get("ieop_score") is not None:
+            por_secretaria[sec].append(r["ieop_score"])
+    ranking = [
+        SecretariaIEOP(secretaria=s, media_ieop=round(sum(v) / len(v), 1))
+        for s, v in por_secretaria.items()
+    ]
+    ranking.sort(key=lambda x: x.media_ieop, reverse=True)
+
+    piores = sorted(
+        (r for r in linhas if r.get("ieop_score") is not None),
+        key=lambda r: r["ieop_score"],
+    )[:5]
+    piores_obras = [
+        PiorObraItem(
+            id=r["id"],
+            nome=r["nome"],
+            ieop_score=r["ieop_score"],
+            ieop_classe=r.get("ieop_classe") or _classe_ieop(r["ieop_score"]),
+        )
+        for r in piores
+    ]
+
+    return IEOPStatsResponse(
+        media_geral=media,
+        classe_geral=_classe_ieop(media),
+        distribuicao=dict(distribuicao),
+        ranking_secretarias=ranking,
+        piores_obras=piores_obras,
+    )

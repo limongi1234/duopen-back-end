@@ -41,3 +41,25 @@ class RankingEficienciaItem(BaseModel):
     situacao: Optional[str] = None
     secretaria: Optional[str] = None
     valor_contrato: Optional[float] = None
+
+
+class SecretariaIEOP(BaseModel):
+    secretaria: str
+    media_ieop: float
+
+
+class PiorObraItem(BaseModel):
+    id: str
+    nome: str
+    ieop_score: float
+    ieop_classe: str
+
+
+class IEOPStatsResponse(BaseModel):
+    """Resumo IEOP do município (GET /api/v1/dashboard/ieop)."""
+
+    media_geral: float
+    classe_geral: str
+    distribuicao: dict[str, int]
+    ranking_secretarias: list[SecretariaIEOP]
+    piores_obras: list[PiorObraItem]

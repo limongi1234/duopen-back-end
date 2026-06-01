@@ -1,4 +1,3 @@
-from datetime import date
 from typing import Any, Mapping, Optional, cast
 
 from fastapi import APIRouter, Depends, Query
@@ -6,6 +5,7 @@ from supabase import Client
 
 from app.core.database import get_supabase_client, rows
 from app.routers.auth import get_current_user
+from app.routers.common import Periodo, get_periodo
 from app.schemas.mapa import (
     GeoJSONFeature,
     GeoJSONFeatureCollection,
@@ -24,25 +24,20 @@ async def obras_geojson(
     obra_status: Optional[str] = Query(None, alias="status"),
     nivel_risco: Optional[str] = Query(None),
     secretaria: Optional[str] = Query(None),
-    data_inicio: Optional[date] = Query(
-        None, description="Filtra obras com data de início a partir desta data"
-    ),
-    data_fim: Optional[date] = Query(
-        None, description="Filtra obras com data de início até esta data"
-    ),
+    periodo: Periodo = Depends(get_periodo),
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
     # secretaria e período não existem na view; resolvemos os IDs na tabela `obras`.
     ids_filtrados: Optional[list[str]] = None
-    if secretaria or data_inicio or data_fim:
+    if secretaria or periodo.data_inicio or periodo.data_fim:
         lookup = db.table("obras").select("id")
         if secretaria:
             lookup = lookup.eq("secretaria", secretaria)
-        if data_inicio:
-            lookup = lookup.gte("data_inicio", data_inicio.isoformat())
-        if data_fim:
-            lookup = lookup.lte("data_inicio", data_fim.isoformat())
+        if periodo.data_inicio:
+            lookup = lookup.gte("data_inicio", periodo.data_inicio.isoformat())
+        if periodo.data_fim:
+            lookup = lookup.lte("data_inicio", periodo.data_fim.isoformat())
         ids_filtrados = [row["id"] for row in rows(lookup.execute())]
         if not ids_filtrados:
             return GeoJSONFeatureCollection(features=[])
