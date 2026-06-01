@@ -22,6 +22,10 @@ PAINEL_TOP_FORNECEDORES = 10
 PAINEL_TOP_OBRAS_RISCO = 8
 PAINEL_TOP_FORNECEDORES_VIGENTES = 5
 
+# Nomes de obra na base costumam carregar o objeto inteiro do contrato; truncamos
+# para o painel não estourar o contexto com texto repetido/irrelevante.
+PAINEL_OBRA_NOME_MAX = 80
+
 # Situação de contrato que representa "em andamento" no schema (vs. Expirado/Indefinido).
 SITUACAO_CONTRATO_VIGENTE = "Vigente"
 
@@ -68,6 +72,11 @@ def buscar_documentos(pergunta: str, top_k: int, client: Any | None = None) -> l
 # ── Painel agregado: contexto estruturado que a busca semântica não cobre ───────
 def _detalhe(rotulo: str, valor: Any) -> str | None:
     return f"{rotulo} {valor}" if valor not in (None, "") else None
+
+
+def _resumir_nome(nome: Any, limite: int = PAINEL_OBRA_NOME_MAX) -> str:
+    texto = " ".join(str(nome or "(sem nome)").split())  # normaliza espaços/quebras
+    return texto if len(texto) <= limite else texto[:limite].rstrip() + "…"
 
 
 def _linha_fornecedor(pos: int, f: dict) -> str:
@@ -173,7 +182,7 @@ def _painel_obras(client: Any) -> list[str]:
     if com_risco:
         blocos.append(f"Obras com maior probabilidade de atraso (top {len(com_risco)}):")
         blocos += [
-            f"{i}. {o.get('nome', '(sem nome)')} — prob. atraso {o['prob_atraso']}; "
+            f"{i}. {_resumir_nome(o.get('nome'))} — prob. atraso {o['prob_atraso']}; "
             f"risco {o.get('nivel_risco', '?')}; secretaria {o.get('secretaria', '?')}"
             for i, o in enumerate(com_risco, 1)
         ]

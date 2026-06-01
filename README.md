@@ -306,6 +306,15 @@ indisponível.
 > do contrato. Após atualizar para esta versão, **reindexe** com `?forcar=true` para
 > que os documentos já existentes ganhem esse contexto.
 
+**Qualidade dos dados de obras (limitação conhecida, origem externa):**
+A tabela `obras` é populada por coletores **externos a este repositório** (8 fontes em
+`fonte_origem`: portal da transparência, painel de obras, TCE-RJ, SISMOB, Google MyMaps…).
+Por isso há ruído herdado da origem: ~44% das obras têm `nome` igual ao `objeto` do
+contrato (a fonte não trazia um nome de obra distinto) e ~52% ficam com `situacao`
+= `Indefinido` (status não mapeado pela fonte). O RAG **trunca** nomes longos no painel
+agregado (`PAINEL_OBRA_NOME_MAX`) para não poluir o contexto, mas a correção de raiz
+(normalizar `nome`/`situacao`) é responsabilidade da pipeline de ingestão, fora deste backend.
+
 ---
 
 ## Testes

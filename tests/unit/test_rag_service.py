@@ -119,6 +119,29 @@ def test_painel_contratos_conta_situacao_e_ranqueia_vigentes():
     assert "2 contratos vigentes" in texto
 
 
+def test_resumir_nome_trunca_e_normaliza():
+    assert rag._resumir_nome("Obra simples") == "Obra simples"
+    assert rag._resumir_nome(None) == "(sem nome)"
+    # normaliza quebras/espaços repetidos
+    assert rag._resumir_nome("Obra\n  com   espaços") == "Obra com espaços"
+    # trunca com reticências quando excede o limite
+    longo = "X" * 200
+    out = rag._resumir_nome(longo)
+    assert out.endswith("…")
+    assert len(out) <= rag.PAINEL_OBRA_NOME_MAX + 1
+
+
+def test_painel_obras_trunca_nome_longo():
+    client = MagicMock()
+    nome_longo = "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA EM CONSTRUÇÃO CIVIL " * 5
+    client.table.return_value.select.return_value.execute.return_value.data = [
+        {"nome": nome_longo, "situacao": "Em andamento", "prob_atraso": 0.9, "nivel_risco": "alto"},
+    ]
+    texto = "\n".join(rag._painel_obras(client))
+    assert nome_longo not in texto  # nome íntegro não aparece
+    assert "…" in texto  # foi truncado
+
+
 def test_painel_obras_conta_situacao_e_ordena_risco():
     client = MagicMock()
     client.table.return_value.select.return_value.execute.return_value.data = [
