@@ -16,10 +16,19 @@ from app.schemas.mapa import (
 router = APIRouter()
 
 # secretaria e data_inicio não existem na mv_mapa_obras; o que existe está aqui.
-_MAPA_FIELDS = "id, nome, situacao, nivel_risco, bairro, valor_contrato, latitude, longitude"
+# percentual_executado e prob_atraso existem na view; ieop_* vêm da tabela `obras`.
+_MAPA_FIELDS = (
+    "id, nome, situacao, nivel_risco, bairro, valor_contrato, latitude, longitude, "
+    "percentual_executado, prob_atraso"
+)
 
 
-@router.get("/", response_model=GeoJSONFeatureCollection, summary="Obras em GeoJSON", description="Obras geolocalizadas como FeatureCollection, com filtros por situação, nível de risco, secretaria e período.")
+@router.get(
+    "/",
+    response_model=GeoJSONFeatureCollection,
+    summary="Obras em GeoJSON",
+    description="Obras geolocalizadas como FeatureCollection, com filtros por situação, nível de risco, secretaria e período.",
+)
 async def obras_geojson(
     obra_status: Optional[str] = Query(None, alias="status"),
     nivel_risco: Optional[str] = Query(None),
@@ -58,6 +67,15 @@ async def obras_geojson(
 
     result = query.execute()
 
+    # IEOP não está na mv_mapa_obras; buscamos na tabela `obras` pelos ids retornados.
+    ieop_by_id: dict[str, Mapping[str, Any]] = {}
+    ids = [str(cast(Mapping[str, Any], o)["id"]) for o in result.data or []]
+    if ids:
+        ieop_rows = rows(
+            db.table("obras").select("id, ieop_score, ieop_classe").in_("id", ids).execute()
+        )
+        ieop_by_id = {str(r["id"]): r for r in ieop_rows}
+
     features = []
     for o in result.data or []:
         row = cast(Mapping[str, Any], o)
@@ -65,6 +83,11 @@ async def obras_geojson(
             continue
         nivel = row.get("nivel_risco")
         bairro = row.get("bairro")
+        ieop = ieop_by_id.get(str(row["id"]), {})
+        pct = row.get("percentual_executado")
+        prob = row.get("prob_atraso")
+        ieop_score = ieop.get("ieop_score")
+        ieop_classe = ieop.get("ieop_classe")
 
         features.append(
             GeoJSONFeature(
@@ -80,6 +103,10 @@ async def obras_geojson(
                     secretaria=secretaria,
                     bairro=str(bairro) if bairro is not None else None,
                     valor_contrato=float(row.get("valor_contrato") or 0),
+                    percentual_executado=float(pct) if pct is not None else None,
+                    prob_atraso=float(prob) if prob is not None else None,
+                    ieop_score=float(ieop_score) if ieop_score is not None else None,
+                    ieop_classe=str(ieop_classe) if ieop_classe is not None else None,
                 ),
             )
         )
@@ -89,7 +116,12 @@ async def obras_geojson(
 
 # ── endpoint legado mantido para compatibilidade ──────────────────────────────
 
-@router.get("/obras", summary="Obras geolocalizadas (legado)", description="Lista bruta de obras com latitude/longitude (endpoint legado).")
+
+@router.get(
+    "/obras",
+    summary="Obras geolocalizadas (legado)",
+    description="Lista bruta de obras com latitude/longitude (endpoint legado).",
+)
 async def obras_geolocalizadas(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),

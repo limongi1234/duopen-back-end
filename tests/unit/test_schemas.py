@@ -16,12 +16,12 @@ def test_obra_create_valid():
         data_prevista_fim=date(2026, 12, 31),
     )
     assert obra.nome == "Obra Teste"
-    assert obra.municipio == "Macaé"
+    assert obra.municipio is None
 
 
 def test_obra_update_partial():
-    update = ObraUpdate(status="concluida")
-    assert update.status == "concluida"
+    update = ObraUpdate(situacao="concluida")
+    assert update.situacao == "concluida"
     assert update.nome is None
 
 

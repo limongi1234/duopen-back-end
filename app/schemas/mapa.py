@@ -16,6 +16,10 @@ class ObraProperties(BaseModel):
     secretaria: Optional[str] = None
     bairro: Optional[str] = None
     valor_contrato: float
+    percentual_executado: Optional[float] = None
+    prob_atraso: Optional[float] = None
+    ieop_score: Optional[float] = None
+    ieop_classe: Optional[str] = None
 
 
 class GeoJSONFeature(BaseModel):
