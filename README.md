@@ -281,11 +281,19 @@ Agente de IA generativa com RAG (LangChain + pgvector/Supabase) sobre contratos 
 **Stack gratuita:** embeddings locais HuggingFace `paraphrase-multilingual-MiniLM-L12-v2`
 (384 dims) + LLM **Gemini 1.5 Flash** (Google AI Studio).
 
+**Contexto enviado ao LLM** (em `rag_service.montar_contexto`): além dos trechos
+recuperados por similaridade, cada consulta inclui um **painel de dados agregados**
+(ranking de fornecedores por nº de contratos, total de obras, obras por situação e
+obras de maior risco). Isso permite responder perguntas analíticas/de ranking
+("qual fornecedor com mais contratos?", "o que você sabe?") que a busca top-k
+sozinha não cobre. O painel degrada com elegância se uma view materializada estiver
+indisponível.
+
 | Método | Rota | Perfil | Descrição |
 |---|---|---|---|
 | POST | `/consulta` | admin, gestor | Consulta em linguagem natural → `{"resposta", "modelo"}` |
 | GET | `/consulta/stream` | admin, gestor | Mesma consulta com streaming SSE (`?pergunta=...`) |
-| POST | `/embeddings/gerar` | admin | Enfileira a indexação dos contratos (enriquecidos com o contexto da obra). **202** com `task_id` + `status_url`; `?forcar=true` recria tudo; **409** se já houver indexação em andamento |
+| POST | `/embeddings/gerar` | admin | Enfileira a indexação dos contratos (enriquecidos com fornecedor + contexto da obra). **202** com `task_id` + `status_url`; `?forcar=true` recria tudo; **409** se já houver indexação em andamento |
 | GET | `/warmup` | autenticado | Pré-aquece o modelo de embedding (~420MB) |
 
 **Pré-requisitos para rodar o RAG:**
@@ -293,6 +301,10 @@ Agente de IA generativa com RAG (LangChain + pgvector/Supabase) sobre contratos 
 2. Rodar [scripts/sql/rag_match_function.sql](scripts/sql/rag_match_function.sql) no Supabase
    (cria a função `match_documentos` + índice HNSW; exige `embeddings.vetor` como `VECTOR(384)`).
 3. Popular os embeddings: `POST /api/v1/ia/embeddings/gerar` (ou rodar a task no worker).
+
+> ℹ️ O texto indexado passou a incluir **fornecedor (razão social + CNPJ)** e o número
+> do contrato. Após atualizar para esta versão, **reindexe** com `?forcar=true` para
+> que os documentos já existentes ganhem esse contexto.
 
 ---
 
