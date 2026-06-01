@@ -1,8 +1,9 @@
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from jose import jwt
-from datetime import datetime, timedelta, timezone
 
 SECRET_KEY = "test-secret-key-for-testing-minimum-32"
 ALGORITHM = "HS256"
@@ -49,8 +50,8 @@ def auth_client():
     with patch("app.core.security.settings", make_settings()), \
          patch("app.core.database.init_db_engine"), \
          patch("app.core.database.dispose_db_engine"):
-        from app.main import app
         from app.core.database import get_supabase_client
+        from app.main import app
 
         app.dependency_overrides[get_supabase_client] = lambda: mock_db
         with TestClient(app) as c:

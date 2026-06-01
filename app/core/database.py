@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncGenerator
 from typing import Any, Optional
 
@@ -14,7 +15,6 @@ from sqlalchemy.ext.asyncio import (
 from supabase import AsyncClient, Client, acreate_client, create_client
 
 from app.core.config import get_settings
-import logging
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ def get_supabase_client() -> Client:
         raise HTTPException(
             status_code=500,
             detail=f"Erro ao conectar ao Supabase: {exc}",
-        )
+        ) from exc
 
 
 async def get_async_supabase_client() -> AsyncGenerator[AsyncClient, None]:
@@ -59,7 +59,7 @@ async def get_async_supabase_client() -> AsyncGenerator[AsyncClient, None]:
         raise HTTPException(
             status_code=500,
             detail=f"Erro ao conectar ao Supabase: {exc}",
-        )
+        ) from exc
 
 
 def init_db_engine() -> None:

@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -60,8 +60,9 @@ def test_buscar_documentos_chama_rpc():
 
 @pytest.mark.asyncio
 async def test_consultar_retorna_resposta():
-    from langchain_core.runnables import RunnableLambda
     from langchain_core.messages import AIMessage
+    from langchain_core.runnables import RunnableLambda
+
     from app.core.config import get_settings
 
     fake_llm = RunnableLambda(lambda msgs: AIMessage(content="Resposta da IA"))

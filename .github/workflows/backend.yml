@@ -25,7 +25,12 @@ jobs:
       # Instalado antes para satisfazer a dep do sentence-transformers sem puxar a build CUDA.
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -r requirements-dev.txt
-      - run: pytest tests/ --cov=app --cov-report=term-missing --cov-fail-under=80
+      - name: Lint (ruff)
+        run: ruff check app/ tests/
+      - name: Type-check (mypy)
+        run: mypy app/
+      - name: Testes + cobertura
+        run: pytest tests/ --cov=app --cov-report=term-missing --cov-fail-under=80
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}

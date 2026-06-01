@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 
 def test_backoff_countdown_exponencial():
-    from app.tasks.celery_app import backoff_countdown, RETRY_BACKOFF_MAX
+    from app.tasks.celery_app import RETRY_BACKOFF_MAX, backoff_countdown
 
     # 2, 4, 8, 16, ... (base 2, dobrando a cada tentativa)
     assert backoff_countdown(0) == 2
@@ -51,6 +51,7 @@ def test_run_ml_analysis_retries_on_error():
 
 def test_task_gerar_embeddings_enriquece_com_obra():
     from unittest.mock import patch
+
     import app.tasks.embedding_tasks as emb
 
     client = MagicMock()
@@ -107,6 +108,7 @@ def test_task_gerar_embeddings_enriquece_com_obra():
 
 def test_task_gerar_embeddings_forcar_recria_indice():
     from unittest.mock import patch
+
     import app.tasks.embedding_tasks as emb
 
     client = MagicMock()
@@ -143,10 +145,12 @@ def test_task_gerar_embeddings_forcar_recria_indice():
     docs_tbl.delete.assert_called()
     # reprocessou mesmo o contrato já indexado
     assert result == {"status": "ok", "chunks": 1}
+    mock_release.assert_called_once()  # sucesso libera o lock
 
 
 def test_task_gerar_embeddings_retries_on_error():
     from unittest.mock import patch
+
     import app.tasks.embedding_tasks as emb
 
     mock_log = MagicMock()

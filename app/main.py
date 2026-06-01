@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -7,7 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.database import check_connection, dispose_db_engine, init_db_engine
 from app.routers import auth, contratos, dashboard, fornecedores, ia, mapa, ml, obras
-import logging
 
 settings = get_settings()
 

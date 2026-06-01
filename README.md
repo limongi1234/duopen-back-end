@@ -303,10 +303,17 @@ Dependências de teste/dev em [requirements-dev.txt](requirements-dev.txt)
 **mockados** — os testes não acessam rede nem baixam modelos.
 
 ```bash
-pytest -q                                          # suíte completa (137 testes)
+pytest -q                                          # suíte completa
 pytest --cov=app --cov-report=term-missing         # com relatório de cobertura
 pytest tests/ --cov=app --cov-fail-under=80         # gate de 80% (igual ao CI)
-mypy app/ tests/                                    # type-check (sem erros)
+ruff check app/ tests/                              # lint (ruff)
+mypy app/                                           # type-check
+```
+
+**Qualidade**: `ruff` (lint) e `mypy` (tipos) rodam no CI a cada push/PR. Para
+rodar automaticamente em cada commit local, instale os hooks:
+```bash
+pre-commit install      # usa .pre-commit-config.yaml (ruff + mypy + checagens)
 ```
 
 Cobertura atual: **~93%** (mínimo exigido: 80%). O gate roda automaticamente no

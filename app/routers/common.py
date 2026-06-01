@@ -13,7 +13,9 @@ def _parse_data(valor: Optional[str], campo: str) -> Optional[date]:
     try:
         return date.fromisoformat(valor.strip())
     except ValueError:
-        raise HTTPException(status_code=422, detail=f"{campo} inválido: use YYYY-MM-DD")
+        raise HTTPException(
+            status_code=422, detail=f"{campo} inválido: use YYYY-MM-DD"
+        ) from None
 
 
 @dataclass

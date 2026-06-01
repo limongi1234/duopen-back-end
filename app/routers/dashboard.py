@@ -1,7 +1,7 @@
 from collections import Counter, defaultdict
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from supabase import Client
 
 from app.core.database import get_supabase_client, rows
@@ -70,11 +70,11 @@ async def distribuicao_por_status(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
-    result = db.table("mv_obras_resumo").select("status, valor_contrato").execute()
+    result = db.table("mv_obras_resumo").select("situacao, valor_contrato").execute()
 
     groups: dict[str, dict[str, Any]] = defaultdict(lambda: {"quantidade": 0, "valor_total": 0.0})
     for obra in rows(result):
-        label = obra.get("status") or "indefinido"
+        label = obra.get("situacao") or "indefinido"
         groups[label]["quantidade"] += 1
         groups[label]["valor_total"] += obra.get("valor_contrato") or 0.0
 
@@ -102,7 +102,7 @@ async def evolucao_mensal(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
-    result = db.table("mv_obras_resumo").select("data_inicio, status").execute()
+    result = db.table("mv_obras_resumo").select("data_inicio, situacao").execute()
 
     groups: dict[str, dict[str, int]] = defaultdict(lambda: {"iniciadas": 0, "concluidas": 0})
     for obra in rows(result):
@@ -111,7 +111,7 @@ async def evolucao_mensal(
             continue
         mes = str(raw)[:7]
         groups[mes]["iniciadas"] += 1
-        if obra.get("status") == "concluida":
+        if obra.get("situacao") == "Concluída":
             groups[mes]["concluidas"] += 1
 
     return sorted(
@@ -144,12 +144,11 @@ async def resumo_dashboard(
     db: Client = Depends(get_supabase_client),
     _: dict = Depends(get_current_user),
 ):
-    obras = db.table("obras").select("id, status, valor_contrato").execute()
-    obras_data: list[dict[str, Any]] = obras.data  # type: ignore[assignment]
+    obras_data = rows(db.table("obras").select("id, situacao, valor_contrato").execute())
     total = len(obras_data)
-    em_andamento = sum(1 for o in obras_data if o["status"] == "em_andamento")
-    concluidas = sum(1 for o in obras_data if o["status"] == "concluida")
-    valor_total = sum(o["valor_contrato"] or 0 for o in obras_data)
+    em_andamento = sum(1 for o in obras_data if o.get("situacao") == "Em andamento")
+    concluidas = sum(1 for o in obras_data if o.get("situacao") == "Concluída")
+    valor_total = sum(o.get("valor_contrato") or 0 for o in obras_data)
     return {
         "total_obras": total,
         "em_andamento": em_andamento,

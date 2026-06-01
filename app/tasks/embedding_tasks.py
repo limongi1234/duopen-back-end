@@ -4,10 +4,10 @@ from typing import Any, Optional
 from celery.exceptions import MaxRetriesExceededError
 from postgrest.exceptions import APIError
 
-from app.tasks.celery_app import celery_app, backoff_countdown
 from app.core.config import get_settings
 from app.core.database import first, get_supabase_client, rows
 from app.core.locks import release_lock
+from app.tasks.celery_app import backoff_countdown, celery_app
 
 log = logging.getLogger("tasks.embedding")
 

@@ -6,7 +6,7 @@ from supabase import Client
 
 from app.core.database import first, get_supabase_client, rows
 from app.routers.auth import get_current_user
-from app.schemas.fornecedores import FornecedorResponse, FornecedorRankingResponse
+from app.schemas.fornecedores import FornecedorRankingResponse, FornecedorResponse
 
 router = APIRouter()
 

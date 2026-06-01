@@ -1,3 +1,15 @@
 [tool.mypy]
 # Bibliotecas sem stubs/py.typed (celery, jose, ...) não devem gerar ruído.
 ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# E/W: pycodestyle · F: pyflakes · I: isort · B: bugbear
+select = ["E", "W", "F", "I", "B"]
+ignore = [
+    "E501",  # linha longa: decorators de rota têm descrições longas propositais
+    "B008",  # Depends()/Query() em default de argumento é o padrão do FastAPI
+]

@@ -1,9 +1,11 @@
-import pytest
 from datetime import date
+
+import pytest
 from pydantic import ValidationError
+
+from app.schemas.auth import LoginRequest
+from app.schemas.ml import MLAnalysisRequest, RAGQuery
 from app.schemas.obras import ObraCreate, ObraUpdate
-from app.schemas.auth import LoginRequest, UserCreate
-from app.schemas.ml import RAGQuery, MLAnalysisRequest
 
 
 def test_obra_create_valid():

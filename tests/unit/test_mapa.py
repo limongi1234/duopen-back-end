@@ -1,6 +1,7 @@
+from unittest.mock import MagicMock, patch
+
 import geojson
 import pytest
-from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 FAKE_USER = {"sub": "test-uid", "email": "test@example.com"}
@@ -20,8 +21,8 @@ OBRA_GEO = {
 @pytest.fixture
 def client_with_auth():
     mock_db = MagicMock()
-    from app.main import app
     from app.core.database import get_supabase_client
+    from app.main import app
     from app.routers.auth import get_current_user
 
     app.dependency_overrides[get_supabase_client] = lambda: mock_db

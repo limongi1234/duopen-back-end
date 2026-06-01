@@ -1,5 +1,6 @@
-from app.tasks.celery_app import celery_app, backoff_countdown
 import logging
+
+from app.tasks.celery_app import backoff_countdown, celery_app
 
 log = logging.getLogger(__name__)
 
@@ -12,7 +13,7 @@ def run_ml_analysis(self, obra_id: str) -> dict:
         return {"obra_id": obra_id, "status": "completed"}
     except Exception as exc:
         log.error(f"Erro na análise ML: {exc}")
-        raise self.retry(exc=exc, countdown=backoff_countdown(self.request.retries))
+        raise self.retry(exc=exc, countdown=backoff_countdown(self.request.retries)) from exc
 
 
 @celery_app.task(bind=True, max_retries=3)
@@ -23,4 +24,4 @@ def run_ml_retraining(self) -> dict:
         return {"status": "completed"}
     except Exception as exc:
         log.error(f"Erro no re-treinamento de ML: {exc}")
-        raise self.retry(exc=exc, countdown=backoff_countdown(self.request.retries))
+        raise self.retry(exc=exc, countdown=backoff_countdown(self.request.retries)) from exc

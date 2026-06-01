@@ -1,15 +1,19 @@
-from typing import Any
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from supabase import Client
+
 from app.core.database import get_supabase_client
 from app.core.security import (
-    hash_password, verify_password,
-    create_access_token, create_refresh_token, decode_token,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    hash_password,
+    verify_password,
 )
-from app.schemas.auth import LoginRequest, TokenResponse, RefreshRequest, UserCreate, UserResponse
+from app.schemas.auth import LoginRequest, RefreshRequest, TokenResponse, UserCreate, UserResponse
 
 router = APIRouter()
 bearer = HTTPBearer()
@@ -108,7 +112,7 @@ async def refresh(body: RefreshRequest):
     try:
         payload = decode_token(body.refresh_token)
     except Exception:
-        raise HTTPException(status_code=401, detail="Refresh token inválido")
+        raise HTTPException(status_code=401, detail="Refresh token inválido") from None
     data = {"sub": payload["sub"], "email": payload["email"], "perfil": payload.get("perfil")}
     return TokenResponse(
         access_token=create_access_token(data),
@@ -120,7 +124,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer)
     try:
         return decode_token(credentials.credentials)
     except Exception:
-        raise HTTPException(status_code=401, detail="Token inválido ou expirado")
+        raise HTTPException(status_code=401, detail="Token inválido ou expirado") from None
 
 
 def require_perfil(*perfis_permitidos: str):

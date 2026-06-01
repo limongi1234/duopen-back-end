@@ -1,5 +1,6 @@
 import math
 from typing import Optional
+
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 

@@ -1,5 +1,6 @@
-from pydantic import BaseModel
 from typing import Optional
+
+from pydantic import BaseModel
 
 
 class DashboardResponse(BaseModel):
@@ -29,8 +30,8 @@ class AlertaObraItem(BaseModel):
     nivel_risco: str
     secretaria: Optional[str] = None
     bairro: Optional[str] = None
-    valor_contrato: float
-    data_prevista_fim: str
+    valor_contrato: Optional[float] = None
+    data_prevista_fim: Optional[str] = None
 
 
 class RankingEficienciaItem(BaseModel):

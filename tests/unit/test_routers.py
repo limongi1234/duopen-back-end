@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 from fastapi.testclient import TestClient
 
 FAKE_USER = {"sub": "test-uid", "email": "test@example.com", "perfil": "admin"}
@@ -25,8 +26,8 @@ OBRA_FIXTURE = {
 @pytest.fixture
 def client_with_auth():
     mock_db = MagicMock()
-    from app.main import app
     from app.core.database import get_supabase_client
+    from app.main import app
     from app.routers.auth import get_current_user
 
     app.dependency_overrides[get_supabase_client] = lambda: mock_db
@@ -469,8 +470,8 @@ def test_contratos_router_por_obra(client_with_auth):
 def test_resumo_dashboard(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.select.return_value.execute.return_value.data = [
-        {"id": "o1", "status": "em_andamento", "valor_contrato": 100000.0},
-        {"id": "o2", "status": "concluida", "valor_contrato": 50000.0},
+        {"id": "o1", "situacao": "Em andamento", "valor_contrato": 100000.0},
+        {"id": "o2", "situacao": "Concluída", "valor_contrato": 50000.0},
     ]
 
     resp = client.get("/api/v1/dashboard/resumo")
@@ -562,24 +563,24 @@ def test_metricas_globais_sem_dados(client_with_auth):
 def test_distribuicao_status(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.select.return_value.execute.return_value.data = [
-        {"status": "em_andamento", "valor_contrato": 100_000.0},
-        {"status": "em_andamento", "valor_contrato": 80_000.0},
-        {"status": "concluida", "valor_contrato": 50_000.0},
+        {"situacao": "Em andamento", "valor_contrato": 100_000.0},
+        {"situacao": "Em andamento", "valor_contrato": 80_000.0},
+        {"situacao": "Concluída", "valor_contrato": 50_000.0},
     ]
 
     resp = client.get("/api/v1/dashboard/distribuicao-status")
 
     assert resp.status_code == 200
     items = {i["label"]: i for i in resp.json()}
-    assert items["em_andamento"]["quantidade"] == 2
-    assert items["em_andamento"]["valor_total"] == 180_000.0
-    assert items["concluida"]["quantidade"] == 1
+    assert items["Em andamento"]["quantidade"] == 2
+    assert items["Em andamento"]["valor_total"] == 180_000.0
+    assert items["Concluída"]["quantidade"] == 1
 
 
 def test_distribuicao_status_campo_nulo(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.select.return_value.execute.return_value.data = [
-        {"status": None, "valor_contrato": 10_000.0},
+        {"situacao": None, "valor_contrato": 10_000.0},
     ]
 
     resp = client.get("/api/v1/dashboard/distribuicao-status")
@@ -607,10 +608,10 @@ def test_distribuicao_secretaria(client_with_auth):
 def test_evolucao_mensal(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.select.return_value.execute.return_value.data = [
-        {"data_inicio": "2026-01-15", "status": "em_andamento"},
-        {"data_inicio": "2026-01-20", "status": "concluida"},
-        {"data_inicio": "2026-02-05", "status": "em_andamento"},
-        {"data_inicio": None, "status": "em_andamento"},
+        {"data_inicio": "2026-01-15", "situacao": "Em andamento"},
+        {"data_inicio": "2026-01-20", "situacao": "Concluída"},
+        {"data_inicio": "2026-02-05", "situacao": "Em andamento"},
+        {"data_inicio": None, "situacao": "Em andamento"},
     ]
 
     resp = client.get("/api/v1/dashboard/evolucao")
@@ -627,9 +628,9 @@ def test_evolucao_mensal(client_with_auth):
 def test_evolucao_mensal_ordenada(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.select.return_value.execute.return_value.data = [
-        {"data_inicio": "2026-03-01", "status": "em_andamento"},
-        {"data_inicio": "2026-01-01", "status": "concluida"},
-        {"data_inicio": "2026-02-01", "status": "em_andamento"},
+        {"data_inicio": "2026-03-01", "situacao": "Em andamento"},
+        {"data_inicio": "2026-01-01", "situacao": "Concluída"},
+        {"data_inicio": "2026-02-01", "situacao": "Em andamento"},
     ]
 
     resp = client.get("/api/v1/dashboard/evolucao")
