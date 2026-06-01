@@ -263,6 +263,36 @@ def test_obter_obra_not_found(client_with_auth):
     assert resp.status_code == 404
 
 
+def test_request_id_no_header(client_with_auth):
+    client, db = client_with_auth
+    _mock_lista(db, [OBRA_FIXTURE], total=1)
+
+    resp = client.get("/api/v1/obras/")
+
+    assert resp.headers.get("X-Request-ID")  # presente e não-vazio
+
+
+def test_request_id_propagado(client_with_auth):
+    client, db = client_with_auth
+    _mock_lista(db, [OBRA_FIXTURE], total=1)
+
+    resp = client.get("/api/v1/obras/", headers={"X-Request-ID": "meu-id-123"})
+
+    assert resp.headers["X-Request-ID"] == "meu-id-123"
+
+
+def test_validacao_422_em_portugues(client_with_auth):
+    client, _ = client_with_auth
+
+    resp = client.get("/api/v1/obras/?page=0")  # page tem ge=1 -> RequestValidationError
+
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["detail"] == "Dados inválidos na requisição."
+    assert any(e["campo"] == "page" for e in body["erros"])
+    assert "request_id" in body
+
+
 def test_apierror_uuid_invalido_vira_400(client_with_auth):
     # APIError 22P02 (UUID malformado) -> handler global devolve 400 limpo
     from postgrest.exceptions import APIError
