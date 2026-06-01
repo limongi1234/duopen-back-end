@@ -11,7 +11,7 @@ from app.tasks.celery_app import backoff_countdown, celery_app
 
 log = logging.getLogger("tasks.embedding")
 
-CHUNK_SIZE = 512   # caracteres por chunk
+CHUNK_SIZE = 512  # caracteres por chunk
 CHUNK_OVERLAP = 50  # sobreposição entre chunks
 _UUID_ZERO = "00000000-0000-0000-0000-000000000000"  # filtro "match-all" para delete
 
@@ -24,9 +24,18 @@ def _linha(rotulo: str, valor: Any) -> Optional[str]:
     return f"{rotulo}: {valor}" if valor not in (None, "") else None
 
 
-def _montar_texto(contrato: dict, obra: Optional[dict]) -> str:
-    """Texto indexável do contrato, enriquecido com o contexto da obra vinculada."""
+def _nome_fornecedor(fornecedor: Optional[dict]) -> Optional[str]:
+    fornecedor = fornecedor or {}
+    return fornecedor.get("razao_social") or fornecedor.get("nome")
+
+
+def _montar_texto(contrato: dict, obra: Optional[dict], fornecedor: Optional[dict] = None) -> str:
+    """Texto indexável do contrato, enriquecido com o fornecedor e o contexto da
+    obra vinculada — para que a busca semântica responda também sobre quem executa."""
     linhas = [
+        _linha("Número do contrato", contrato.get("numero")),
+        _linha("Fornecedor", _nome_fornecedor(fornecedor)),
+        _linha("CNPJ do fornecedor", (fornecedor or {}).get("cnpj")),
         _linha("Objeto do contrato", contrato.get("objeto")),
         _linha("Modalidade", contrato.get("modalidade")),
         _linha("Situação do contrato", contrato.get("situacao")),
@@ -45,13 +54,16 @@ def _montar_texto(contrato: dict, obra: Optional[dict]) -> str:
     return "\n".join(linha for linha in linhas if linha)
 
 
-def _metadata(contrato: dict, obra: Optional[dict]) -> dict:
+def _metadata(contrato: dict, obra: Optional[dict], fornecedor: Optional[dict] = None) -> dict:
     obra = obra or {}
     return {
         "id_contrato": contrato["id"],
         "id_obra": contrato.get("id_obra"),
+        "numero_contrato": contrato.get("numero"),
         "modalidade": contrato.get("modalidade"),
         "situacao_contrato": contrato.get("situacao"),
+        "fornecedor": _nome_fornecedor(fornecedor),
+        "cnpj_fornecedor": (fornecedor or {}).get("cnpj"),
         "obra": obra.get("nome"),
         "secretaria": obra.get("secretaria"),
         "nivel_risco": obra.get("nivel_risco"),
@@ -75,6 +87,17 @@ def _carregar_obras(client) -> dict[str, dict]:
         return {o["id"]: o for o in linhas}
     except APIError as exc:
         log.warning("Enriquecimento indisponível (mv_obras_resumo): %s", exc)
+        return {}
+
+
+def _carregar_fornecedores(client) -> dict[str, dict]:
+    """Lookup `id_fornecedor -> {razao_social/nome, cnpj}` para enriquecer cada
+    contrato com quem o executa. Degrada com elegância se a tabela estiver indisponível."""
+    try:
+        linhas = rows(client.table("fornecedores").select("*").execute())
+        return {f["id"]: f for f in linhas if f.get("id")}
+    except APIError as exc:
+        log.warning("Enriquecimento indisponível (fornecedores): %s", exc)
         return {}
 
 
@@ -118,21 +141,26 @@ def task_gerar_embeddings(self, forcar: bool = False) -> dict:
             }
         contratos = rows(
             client.table("contratos")
-            .select("id,id_obra,objeto,modalidade,situacao,valor_global,valor_final")
+            .select(
+                "id,id_obra,id_fornecedor,numero,objeto,modalidade,"
+                "situacao,valor_global,valor_final"
+            )
             .execute()
         )
         obras_por_id = _carregar_obras(client)
+        fornecedores_por_id = _carregar_fornecedores(client)
 
         total_chunks = 0
         for contrato in contratos:
             if contrato["id"] in ja_indexados:
                 continue
             obra = obras_por_id.get(contrato.get("id_obra") or "")
-            texto = _montar_texto(contrato, obra)
+            fornecedor = fornecedores_por_id.get(contrato.get("id_fornecedor") or "")
+            texto = _montar_texto(contrato, obra, fornecedor)
             if not texto.strip():
                 continue
 
-            metadata = _metadata(contrato, obra)
+            metadata = _metadata(contrato, obra, fornecedor)
             for chunk in splitter.split_text(texto):
                 doc = first(
                     client.table("documentos_rag")

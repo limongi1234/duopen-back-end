@@ -48,14 +48,146 @@ def test_buscar_documentos_chama_rpc():
     client.rpc.return_value.execute.return_value.data = [
         {"content": "trecho", "metadata": {"id_contrato": "c1"}, "similarity": 0.9}
     ]
-    with patch("app.services.rag_service.get_embeddings", return_value=fake_emb), \
-         patch("app.services.rag_service.get_supabase_client", return_value=client):
+    with (
+        patch("app.services.rag_service.get_embeddings", return_value=fake_emb),
+        patch("app.services.rag_service.get_supabase_client", return_value=client),
+    ):
         docs = rag.buscar_documentos("pergunta?", 5)
 
     assert docs[0]["content"] == "trecho"
     client.rpc.assert_called_with(
         "match_documentos", {"query_embedding": [0.1] * 384, "match_count": 5}
     )
+
+
+def test_painel_fornecedores_formata_ranking():
+    client = MagicMock()
+    chain = client.table.return_value.select.return_value.order.return_value.limit.return_value
+    chain.execute.return_value.data = [
+        {
+            "razao_social": "Construtora Alfa",
+            "cnpj": "12.345.678/0001-90",
+            "total_contratos": 7,
+            "obras_em_andamento": 3,
+            "valor_total": 1000.0,
+        },
+        {"razao_social": "Beta Eng", "cnpj": "98.765.432/0001-10", "total_contratos": 2},
+    ]
+    linhas = rag._painel_fornecedores(client)
+
+    assert linhas[0] == "Fornecedores com mais contratos (top 2):"
+    assert "Construtora Alfa" in linhas[1]
+    assert "contratos: 7" in linhas[1]
+    assert "obras em andamento: 3" in linhas[1]
+    client.table.assert_called_with("mv_fornecedores_ranking")
+
+
+def test_painel_fornecedores_vazio_retorna_lista_vazia():
+    client = MagicMock()
+    chain = client.table.return_value.select.return_value.order.return_value.limit.return_value
+    chain.execute.return_value.data = []
+    assert rag._painel_fornecedores(client) == []
+
+
+def test_painel_contratos_conta_situacao_e_ranqueia_vigentes():
+    client = MagicMock()
+    contratos_tbl = MagicMock()
+    contratos_tbl.select.return_value.execute.return_value.data = [
+        {"id_fornecedor": "f1", "situacao": "Vigente"},
+        {"id_fornecedor": "f1", "situacao": "Vigente"},
+        {"id_fornecedor": "f2", "situacao": "Vigente"},
+        {"id_fornecedor": "f2", "situacao": "Expirado"},
+        {"id_fornecedor": None, "situacao": "Indefinido"},
+    ]
+    forn_tbl = MagicMock()
+    forn_tbl.select.return_value.in_.return_value.execute.return_value.data = [
+        {"id": "f1", "razao_social": "Construtora Alfa"},
+        {"id": "f2", "razao_social": "Beta Eng"},
+    ]
+    client.table.side_effect = lambda nome: {
+        "contratos": contratos_tbl,
+        "fornecedores": forn_tbl,
+    }[nome]
+
+    texto = "\n".join(rag._painel_contratos(client))
+
+    assert "Total de contratos cadastrados: 5." in texto
+    assert "Vigente: 3" in texto
+    assert "Expirado: 1" in texto
+    # f1 (2 vigentes) deve aparecer antes de f2 (1 vigente)
+    assert texto.index("Construtora Alfa") < texto.index("Beta Eng")
+    assert "2 contratos vigentes" in texto
+
+
+def test_resumir_nome_trunca_e_normaliza():
+    assert rag._resumir_nome("Obra simples") == "Obra simples"
+    assert rag._resumir_nome(None) == "(sem nome)"
+    # normaliza quebras/espaços repetidos
+    assert rag._resumir_nome("Obra\n  com   espaços") == "Obra com espaços"
+    # trunca com reticências quando excede o limite
+    longo = "X" * 200
+    out = rag._resumir_nome(longo)
+    assert out.endswith("…")
+    assert len(out) <= rag.PAINEL_OBRA_NOME_MAX + 1
+
+
+def test_painel_obras_trunca_nome_longo():
+    client = MagicMock()
+    nome_longo = "CONTRATAÇÃO DE EMPRESA ESPECIALIZADA EM CONSTRUÇÃO CIVIL " * 5
+    client.table.return_value.select.return_value.execute.return_value.data = [
+        {"nome": nome_longo, "situacao": "Em andamento", "prob_atraso": 0.9, "nivel_risco": "alto"},
+    ]
+    texto = "\n".join(rag._painel_obras(client))
+    assert nome_longo not in texto  # nome íntegro não aparece
+    assert "…" in texto  # foi truncado
+
+
+def test_painel_obras_conta_situacao_e_ordena_risco():
+    client = MagicMock()
+    client.table.return_value.select.return_value.execute.return_value.data = [
+        {"nome": "Obra A", "situacao": "Em andamento", "prob_atraso": 0.2, "nivel_risco": "baixo"},
+        {"nome": "Obra B", "situacao": "Em andamento", "prob_atraso": 0.9, "nivel_risco": "alto"},
+        {"nome": "Obra C", "situacao": "Concluída", "prob_atraso": None},
+    ]
+    linhas = rag._painel_obras(client)
+    texto = "\n".join(linhas)
+
+    assert "Total de obras cadastradas: 3." in texto
+    assert "Em andamento: 2" in texto
+    assert "Concluída: 1" in texto
+    # a obra de maior prob. de atraso aparece em 1º no ranking de risco
+    pos_b = texto.index("Obra B")
+    pos_a = texto.index("Obra A")
+    assert pos_b < pos_a
+
+
+def test_carregar_painel_resiliente_a_apierror():
+    from postgrest.exceptions import APIError
+
+    client = MagicMock()
+    # fornecedores falha; obras responde normalmente
+    client.table.return_value.select.return_value.order.return_value.limit.return_value.execute.side_effect = APIError(
+        {"message": "view stale", "code": "55000"}
+    )
+    client.table.return_value.select.return_value.execute.return_value.data = [
+        {"nome": "Obra A", "situacao": "Em andamento", "prob_atraso": 0.5}
+    ]
+    painel = rag.carregar_painel(client)
+
+    assert "Total de obras cadastradas: 1." in painel  # não quebrou apesar da falha
+
+
+def test_montar_contexto_combina_painel_e_semantico():
+    with (
+        patch("app.services.rag_service.get_supabase_client", return_value=MagicMock()),
+        patch("app.services.rag_service.carregar_painel", return_value="PAINEL X"),
+        patch("app.services.rag_service.buscar_documentos", return_value=[{"content": "trecho Y"}]),
+    ):
+        ctx = rag.montar_contexto("pergunta?", 5)
+
+    assert "PAINEL DE DADOS AGREGADOS" in ctx
+    assert "PAINEL X" in ctx
+    assert "trecho Y" in ctx
 
 
 @pytest.mark.asyncio
@@ -66,9 +198,10 @@ async def test_consultar_retorna_resposta():
     from app.core.config import get_settings
 
     fake_llm = RunnableLambda(lambda msgs: AIMessage(content="Resposta da IA"))
-    with patch("app.services.rag_service.buscar_documentos",
-               return_value=[{"content": "ctx", "metadata": {}}]), \
-         patch("app.services.rag_service.get_llm", return_value=fake_llm):
+    with (
+        patch("app.services.rag_service.montar_contexto", return_value="ctx"),
+        patch("app.services.rag_service.get_llm", return_value=fake_llm),
+    ):
         out = await rag.consultar("pergunta?")
 
     assert out["resposta"] == "Resposta da IA"
@@ -77,7 +210,7 @@ async def test_consultar_retorna_resposta():
 
 @pytest.mark.asyncio
 async def test_consultar_trata_excecao_sem_quebrar():
-    with patch("app.services.rag_service.buscar_documentos", side_effect=RuntimeError("boom")):
+    with patch("app.services.rag_service.montar_contexto", side_effect=RuntimeError("boom")):
         out = await rag.consultar("x")
 
     assert out["modelo"] is None
@@ -93,8 +226,10 @@ async def test_consultar_stream_emite_tokens():
     fake_llm = MagicMock()
     fake_llm.astream = fake_astream
 
-    with patch("app.services.rag_service.buscar_documentos", return_value=[{"content": "ctx"}]), \
-         patch("app.services.rag_service.get_llm", return_value=fake_llm):
+    with (
+        patch("app.services.rag_service.montar_contexto", return_value="ctx"),
+        patch("app.services.rag_service.get_llm", return_value=fake_llm),
+    ):
         chunks = [c async for c in rag.consultar_stream("pergunta?")]
 
     assert "data: Olá\n\n" in chunks
@@ -109,8 +244,10 @@ async def test_consultar_stream_finaliza_com_done():
     fake_llm = MagicMock()
     fake_llm.astream = fake_astream
 
-    with patch("app.services.rag_service.buscar_documentos", return_value=[]), \
-         patch("app.services.rag_service.get_llm", return_value=fake_llm):
+    with (
+        patch("app.services.rag_service.montar_contexto", return_value=""),
+        patch("app.services.rag_service.get_llm", return_value=fake_llm),
+    ):
         chunks = [c async for c in rag.consultar_stream("pergunta?")]
 
     assert chunks[-1] == "data: [DONE]\n\n"
@@ -118,7 +255,7 @@ async def test_consultar_stream_finaliza_com_done():
 
 @pytest.mark.asyncio
 async def test_consultar_stream_trata_erro():
-    with patch("app.services.rag_service.buscar_documentos", side_effect=RuntimeError("boom")):
+    with patch("app.services.rag_service.montar_contexto", side_effect=RuntimeError("boom")):
         chunks = [c async for c in rag.consultar_stream("x")]
 
     assert any("Erro ao processar" in c for c in chunks)

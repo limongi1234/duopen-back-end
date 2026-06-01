@@ -60,18 +60,41 @@ def test_task_gerar_embeddings_enriquece_com_obra():
     docs_tbl.insert.return_value.execute.return_value.data = [{"id": "doc1"}]
     contratos_tbl = MagicMock()
     contratos_tbl.select.return_value.execute.return_value.data = [
-        {"id": "c1", "id_obra": "o1", "objeto": "Pavimentação", "modalidade": "Pregão",
-         "situacao": "Em andamento", "valor_global": 100.0, "valor_final": 90.0}
+        {
+            "id": "c1",
+            "id_obra": "o1",
+            "id_fornecedor": "f1",
+            "numero": "001/2026",
+            "objeto": "Pavimentação",
+            "modalidade": "Pregão",
+            "situacao": "Em andamento",
+            "valor_global": 100.0,
+            "valor_final": 90.0,
+        }
     ]
     mv_tbl = MagicMock()
     mv_tbl.select.return_value.execute.return_value.data = [
-        {"id": "o1", "nome": "Escola Municipal", "secretaria": "Educação",
-         "bairro": "Centro", "nivel_risco": "alto", "prob_atraso": 0.9, "situacao": "Em andamento"}
+        {
+            "id": "o1",
+            "nome": "Escola Municipal",
+            "secretaria": "Educação",
+            "bairro": "Centro",
+            "nivel_risco": "alto",
+            "prob_atraso": 0.9,
+            "situacao": "Em andamento",
+        }
+    ]
+    forn_tbl = MagicMock()
+    forn_tbl.select.return_value.execute.return_value.data = [
+        {"id": "f1", "razao_social": "Construtora Alfa LTDA", "cnpj": "12.345.678/0001-90"}
     ]
     emb_tbl = MagicMock()
     client.table.side_effect = lambda name: {
-        "documentos_rag": docs_tbl, "contratos": contratos_tbl,
-        "mv_obras_resumo": mv_tbl, "embeddings": emb_tbl,
+        "documentos_rag": docs_tbl,
+        "contratos": contratos_tbl,
+        "mv_obras_resumo": mv_tbl,
+        "fornecedores": forn_tbl,
+        "embeddings": emb_tbl,
     }[name]
 
     model = MagicMock()
@@ -85,24 +108,31 @@ def test_task_gerar_embeddings_enriquece_com_obra():
     splitter = MagicMock()
     splitter.split_text.side_effect = fake_split
 
-    with patch("app.tasks.embedding_tasks.get_supabase_client", return_value=client), \
-         patch("app.tasks.embedding_tasks.release_lock") as mock_release, \
-         patch("sentence_transformers.SentenceTransformer", return_value=model), \
-         patch("langchain_text_splitters.RecursiveCharacterTextSplitter", return_value=splitter):
+    with (
+        patch("app.tasks.embedding_tasks.get_supabase_client", return_value=client),
+        patch("app.tasks.embedding_tasks.release_lock") as mock_release,
+        patch("sentence_transformers.SentenceTransformer", return_value=model),
+        patch("langchain_text_splitters.RecursiveCharacterTextSplitter", return_value=splitter),
+    ):
         result = emb.task_gerar_embeddings()
 
     assert result == {"status": "ok", "chunks": 1}
     emb_tbl.insert.assert_called_once()
-    # texto indexado enriquecido com contexto da obra
+    # texto indexado enriquecido com contexto da obra e do fornecedor
     assert "Escola Municipal" in captured["texto"]
     assert "Educação" in captured["texto"]
     assert "alto" in captured["texto"]
+    assert "Construtora Alfa LTDA" in captured["texto"]
+    assert "12.345.678/0001-90" in captured["texto"]
     # metadata enriquecida
     meta = docs_tbl.insert.call_args[0][0]["metadata"]
     assert meta["id_obra"] == "o1"
     assert meta["secretaria"] == "Educação"
     assert meta["nivel_risco"] == "alto"
     assert meta["obra"] == "Escola Municipal"
+    assert meta["fornecedor"] == "Construtora Alfa LTDA"
+    assert meta["cnpj_fornecedor"] == "12.345.678/0001-90"
+    assert meta["numero_contrato"] == "001/2026"
     mock_release.assert_called_once()  # sucesso libera o lock
 
 
@@ -118,15 +148,29 @@ def test_task_gerar_embeddings_forcar_recria_indice():
     docs_tbl.insert.return_value.execute.return_value.data = [{"id": "doc1"}]
     contratos_tbl = MagicMock()
     contratos_tbl.select.return_value.execute.return_value.data = [
-        {"id": "c1", "id_obra": "o1", "objeto": "X", "modalidade": "Pregão",
-         "situacao": "Em andamento", "valor_global": 100.0, "valor_final": 90.0}
+        {
+            "id": "c1",
+            "id_obra": "o1",
+            "id_fornecedor": "f1",
+            "numero": "001/2026",
+            "objeto": "X",
+            "modalidade": "Pregão",
+            "situacao": "Em andamento",
+            "valor_global": 100.0,
+            "valor_final": 90.0,
+        }
     ]
     mv_tbl = MagicMock()
     mv_tbl.select.return_value.execute.return_value.data = []
+    forn_tbl = MagicMock()
+    forn_tbl.select.return_value.execute.return_value.data = []
     emb_tbl = MagicMock()
     client.table.side_effect = lambda name: {
-        "documentos_rag": docs_tbl, "contratos": contratos_tbl,
-        "mv_obras_resumo": mv_tbl, "embeddings": emb_tbl,
+        "documentos_rag": docs_tbl,
+        "contratos": contratos_tbl,
+        "mv_obras_resumo": mv_tbl,
+        "fornecedores": forn_tbl,
+        "embeddings": emb_tbl,
     }[name]
 
     model = MagicMock()
@@ -134,10 +178,12 @@ def test_task_gerar_embeddings_forcar_recria_indice():
     splitter = MagicMock()
     splitter.split_text.return_value = ["chunk1"]
 
-    with patch("app.tasks.embedding_tasks.get_supabase_client", return_value=client), \
-         patch("app.tasks.embedding_tasks.release_lock") as mock_release, \
-         patch("sentence_transformers.SentenceTransformer", return_value=model), \
-         patch("langchain_text_splitters.RecursiveCharacterTextSplitter", return_value=splitter):
+    with (
+        patch("app.tasks.embedding_tasks.get_supabase_client", return_value=client),
+        patch("app.tasks.embedding_tasks.release_lock") as mock_release,
+        patch("sentence_transformers.SentenceTransformer", return_value=model),
+        patch("langchain_text_splitters.RecursiveCharacterTextSplitter", return_value=splitter),
+    ):
         result = emb.task_gerar_embeddings(forcar=True)
 
     # apagou o índice antes de regerar (embeddings e documentos_rag)
@@ -158,9 +204,13 @@ def test_task_gerar_embeddings_retries_on_error():
     emb.log = mock_log
     # get_supabase_client é chamado antes de instanciar o modelo → sem download.
     try:
-        with patch("app.tasks.embedding_tasks.get_supabase_client",
-                   side_effect=RuntimeError("forced error")), \
-             patch("app.tasks.embedding_tasks.release_lock") as mock_release:
+        with (
+            patch(
+                "app.tasks.embedding_tasks.get_supabase_client",
+                side_effect=RuntimeError("forced error"),
+            ),
+            patch("app.tasks.embedding_tasks.release_lock") as mock_release,
+        ):
             emb.task_gerar_embeddings()
     except Exception:
         pass
