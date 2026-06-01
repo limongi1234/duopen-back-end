@@ -36,41 +36,37 @@ class ObraIEOPFields(BaseModel):
     tipo_sinapi: Optional[str] = None
 
 
-class ObraBase(BaseModel):
+class ObraCreate(BaseModel):
+    """Criação manual de obra (obras normalmente vêm do ETL de coleta).
+
+    Espelha colunas reais da tabela `obras`; só `nome` é obrigatório.
+    """
+
     nome: str
-    descricao: Optional[str] = None
-    valor_contrato: float
-    data_inicio: date
-    data_prevista_fim: date
-    status: str = "em_andamento"
-    municipio: str = "Macaé"
+    objeto: Optional[str] = None
+    situacao: Optional[str] = None
+    tipo: Optional[str] = None
     secretaria: Optional[str] = None
     bairro: Optional[str] = None
-    nivel_risco: Optional[str] = None
+    municipio: Optional[str] = None
+    uf: Optional[str] = None
+    valor_contrato: Optional[float] = None
+    data_inicio: Optional[date] = None
+    data_prevista_fim: Optional[date] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
 
-class ObraCreate(ObraBase):
-    pass
-
-
 class ObraUpdate(BaseModel):
     nome: Optional[str] = None
-    descricao: Optional[str] = None
-    valor_contrato: Optional[float] = None
-    status: Optional[str] = None
-    data_prevista_fim: Optional[date] = None
+    objeto: Optional[str] = None
+    situacao: Optional[str] = None
     secretaria: Optional[str] = None
     bairro: Optional[str] = None
-    nivel_risco: Optional[str] = None
-
-
-class ObraResponse(ObraBase, ObraColetaFields, ObraIEOPFields):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    created_at: str
+    valor_contrato: Optional[float] = None
+    data_prevista_fim: Optional[date] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 class ObraDetalheResponse(ObraColetaFields, ObraIEOPFields):

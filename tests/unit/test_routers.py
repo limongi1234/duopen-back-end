@@ -508,22 +508,31 @@ def test_criar_obra(client_with_auth):
     assert resp.json()["nome"] == "Obra Teste"
 
 
+def test_criar_obra_readonly_403(client_with_auth):
+    client, _ = client_with_auth
+    _override_perfil("readonly")
+
+    resp = client.post("/api/v1/obras/", json={"nome": "X"})
+
+    assert resp.status_code == 403
+
+
 def test_atualizar_obra_found(client_with_auth):
     client, db = client_with_auth
-    updated = {**OBRA_FIXTURE, "status": "concluida"}
+    updated = {**OBRA_FIXTURE, "situacao": "Concluída"}
     db.table.return_value.update.return_value.eq.return_value.execute.return_value.data = [updated]
 
-    resp = client.patch("/api/v1/obras/obra-1", json={"status": "concluida"})
+    resp = client.patch("/api/v1/obras/obra-1", json={"situacao": "Concluída"})
 
     assert resp.status_code == 200
-    assert resp.json()["status"] == "concluida"
+    assert resp.json()["situacao"] == "Concluída"
 
 
 def test_atualizar_obra_not_found(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.update.return_value.eq.return_value.execute.return_value.data = []
 
-    resp = client.patch("/api/v1/obras/nao-existe", json={"status": "concluida"})
+    resp = client.patch("/api/v1/obras/nao-existe", json={"situacao": "Concluída"})
 
     assert resp.status_code == 404
 

@@ -7,14 +7,13 @@ from postgrest.exceptions import APIError
 from postgrest.types import CountMethod
 from supabase import Client
 
-from app.core.database import get_supabase_client
-from app.routers.auth import get_current_user
+from app.core.database import first, get_supabase_client
+from app.routers.auth import get_current_user, require_perfil
 from app.routers.common import Periodo, get_periodo
 from app.schemas.obras import (
     ObraCreate,
     ObraDetalheResponse,
     ObraListResponse,
-    ObraResponse,
     ObraUpdate,
 )
 
@@ -67,9 +66,7 @@ def _listar_de_obras(
         )
     offset = (page - 1) * size
     result = query.range(offset, offset + size - 1).execute()
-    return ObraListResponse.build(
-        data=result.data, total=result.count or 0, page=page, size=size
-    )
+    return ObraListResponse.build(data=result.data, total=result.count or 0, page=page, size=size)
 
 
 @router.get(
@@ -162,7 +159,12 @@ async def listar_obras(
         )
 
 
-@router.get("/{obra_id}", response_model=ObraDetalheResponse, summary="Detalhe da obra", description="Retorna uma obra por id. **404** se não encontrada.")
+@router.get(
+    "/{obra_id}",
+    response_model=ObraDetalheResponse,
+    summary="Detalhe da obra",
+    description="Retorna uma obra por id. **404** se não encontrada.",
+)
 async def obter_obra(
     obra_id: str,
     db: Client = Depends(get_supabase_client),
@@ -174,7 +176,11 @@ async def obter_obra(
     return result.data[0]
 
 
-@router.get("/{obra_id}/contratos", summary="Contratos da obra", description="Lista os contratos vinculados à obra.")
+@router.get(
+    "/{obra_id}/contratos",
+    summary="Contratos da obra",
+    description="Lista os contratos vinculados à obra.",
+)
 async def contratos_por_obra(
     obra_id: str,
     db: Client = Depends(get_supabase_client),
@@ -184,7 +190,11 @@ async def contratos_por_obra(
     return result.data
 
 
-@router.get("/{obra_id}/aditivos", summary="Aditivos da obra", description="Lista os aditivos vinculados à obra.")
+@router.get(
+    "/{obra_id}/aditivos",
+    summary="Aditivos da obra",
+    description="Lista os aditivos vinculados à obra.",
+)
 async def aditivos_por_obra(
     obra_id: str,
     db: Client = Depends(get_supabase_client),
@@ -194,34 +204,55 @@ async def aditivos_por_obra(
     return result.data
 
 
-@router.post("/", response_model=ObraResponse, status_code=http_status.HTTP_201_CREATED, summary="Criar obra")
+@router.post(
+    "/",
+    response_model=ObraDetalheResponse,
+    status_code=http_status.HTTP_201_CREATED,
+    summary="Criar obra (admin)",
+    description="Cria uma obra. Obras normalmente vêm do ETL; este endpoint é admin-only.",
+)
 async def criar_obra(
     body: ObraCreate,
     db: Client = Depends(get_supabase_client),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_perfil("admin")),
 ):
-    result = db.table("obras").insert(body.model_dump()).execute()
-    return result.data[0]
+    result = db.table("obras").insert(body.model_dump(mode="json", exclude_none=True)).execute()
+    criada = first(result)
+    if criada is None:
+        raise HTTPException(status_code=500, detail="Erro ao criar a obra")
+    return criada
 
 
-@router.patch("/{obra_id}", response_model=ObraResponse, summary="Atualizar obra", description="Atualização parcial. **404** se não encontrada.")
+@router.patch(
+    "/{obra_id}",
+    response_model=ObraDetalheResponse,
+    summary="Atualizar obra (admin)",
+    description="Atualização parcial. **404** se não encontrada. Admin-only.",
+)
 async def atualizar_obra(
     obra_id: str,
     body: ObraUpdate,
     db: Client = Depends(get_supabase_client),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_perfil("admin")),
 ):
-    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    updates = body.model_dump(mode="json", exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
     result = db.table("obras").update(updates).eq("id", obra_id).execute()
-    if not result.data:
+    atualizada = first(result)
+    if atualizada is None:
         raise HTTPException(status_code=404, detail="Obra não encontrada")
-    return result.data[0]
+    return atualizada
 
 
-@router.delete("/{obra_id}", status_code=http_status.HTTP_204_NO_CONTENT, summary="Remover obra")
+@router.delete(
+    "/{obra_id}",
+    status_code=http_status.HTTP_204_NO_CONTENT,
+    summary="Remover obra (admin)",
+)
 async def deletar_obra(
     obra_id: str,
     db: Client = Depends(get_supabase_client),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_perfil("admin")),
 ):
     db.table("obras").delete().eq("id", obra_id).execute()
