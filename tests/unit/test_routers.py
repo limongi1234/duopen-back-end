@@ -33,8 +33,7 @@ def client_with_auth():
     app.dependency_overrides[get_supabase_client] = lambda: mock_db
     app.dependency_overrides[get_current_user] = lambda: FAKE_USER
 
-    with patch("app.core.database.init_db_engine"), \
-         patch("app.core.database.dispose_db_engine"):
+    with patch("app.core.database.init_db_engine"), patch("app.core.database.dispose_db_engine"):
         with TestClient(app) as c:
             yield c, mock_db
 
@@ -43,6 +42,7 @@ def client_with_auth():
 
 
 # ── Obras ──────────────────────────────────────────────────────────────────────
+
 
 def _mock_lista(db, data, total=None):
     mock_result = MagicMock()
@@ -146,7 +146,9 @@ def test_listar_obras_sort(client_with_auth):
 
     assert resp.status_code == 200
     assert resp.json()["total"] == 1
-    db.table.return_value.select.return_value.order.assert_called_with("prob_atraso", desc=True, nullsfirst=False)
+    db.table.return_value.select.return_value.order.assert_called_with(
+        "prob_atraso", desc=True, nullsfirst=False
+    )
 
 
 def test_listar_obras_limit(client_with_auth):
@@ -178,7 +180,9 @@ def test_listar_obras_filtro_periodo(client_with_auth):
     assert resp.status_code == 200
     assert resp.json()["total"] == 1
     db.table.return_value.select.return_value.gte.assert_called_with("data_inicio", "2026-04-01")
-    db.table.return_value.select.return_value.gte.return_value.lte.assert_called_with("data_inicio", "2026-05-29")
+    db.table.return_value.select.return_value.gte.return_value.lte.assert_called_with(
+        "data_inicio", "2026-05-29"
+    )
 
 
 def test_listar_obras_data_vazia_nao_quebra(client_with_auth):
@@ -211,16 +215,21 @@ def test_listar_obras_fallback_mv_nao_populada(client_with_auth):
     from postgrest.exceptions import APIError
 
     client, db = client_with_auth
-    mv_err = APIError({
-        "message": 'materialized view "mv_obras_resumo" has not been populated',
-        "code": "55000", "hint": "Use the REFRESH MATERIALIZED VIEW command.", "details": None,
-    })
+    mv_err = APIError(
+        {
+            "message": 'materialized view "mv_obras_resumo" has not been populated',
+            "code": "55000",
+            "hint": "Use the REFRESH MATERIALIZED VIEW command.",
+            "details": None,
+        }
+    )
     fallback_result = MagicMock()
     fallback_result.data = [OBRA_FIXTURE]
     fallback_result.count = 1
     # 1ª execução (view) estoura 55000; 2ª (fallback em obras) retorna dados
     db.table.return_value.select.return_value.range.return_value.execute.side_effect = [
-        mv_err, fallback_result
+        mv_err,
+        fallback_result,
     ]
 
     resp = client.get("/api/v1/obras/")
@@ -232,7 +241,9 @@ def test_listar_obras_fallback_mv_nao_populada(client_with_auth):
 
 def test_obter_obra_found(client_with_auth):
     client, db = client_with_auth
-    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [OBRA_FIXTURE]
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+        OBRA_FIXTURE
+    ]
 
     resp = client.get("/api/v1/obras/obra-1")
 
@@ -250,6 +261,48 @@ def test_obter_obra_not_found(client_with_auth):
     resp = client.get("/api/v1/obras/nao-existe")
 
     assert resp.status_code == 404
+
+
+def test_apierror_uuid_invalido_vira_400(client_with_auth):
+    # APIError 22P02 (UUID malformado) -> handler global devolve 400 limpo
+    from postgrest.exceptions import APIError
+
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.eq.return_value.execute.side_effect = APIError(
+        {
+            "message": "invalid input syntax for type uuid",
+            "code": "22P02",
+            "hint": None,
+            "details": None,
+        }
+    )
+
+    resp = client.get("/api/v1/obras/id-invalido")
+
+    assert resp.status_code == 400
+    assert "detail" in resp.json()
+
+
+def test_apierror_desconhecido_vira_500_limpo(client_with_auth):
+    # APIError sem mapeamento -> 500 com mensagem genérica (não vaza o banco)
+    from postgrest.exceptions import APIError
+
+    client, db = client_with_auth
+    db.table.return_value.select.return_value.eq.return_value.execute.side_effect = APIError(
+        {
+            "message": "column obras.foo does not exist",
+            "code": "42703",
+            "hint": None,
+            "details": None,
+        }
+    )
+
+    resp = client.get("/api/v1/obras/obra-1")
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Erro ao acessar a base de dados. Tente novamente em instantes."
+    # não vaza o detalhe técnico do Postgres
+    assert "does not exist" not in resp.json()["detail"]
 
 
 def test_obter_obra_expoe_campos_coleta(client_with_auth):
@@ -277,7 +330,9 @@ def test_obter_obra_expoe_campos_coleta(client_with_auth):
 
 def test_obter_obra_campos_coleta_nulos(client_with_auth):
     client, db = client_with_auth
-    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [OBRA_FIXTURE]
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+        OBRA_FIXTURE
+    ]
 
     resp = client.get("/api/v1/obras/obra-1")
 
@@ -383,12 +438,15 @@ def test_criar_obra(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.insert.return_value.execute.return_value.data = [OBRA_FIXTURE]
 
-    resp = client.post("/api/v1/obras/", json={
-        "nome": "Obra Teste",
-        "valor_contrato": 100000.0,
-        "data_inicio": "2026-01-01",
-        "data_prevista_fim": "2026-12-31",
-    })
+    resp = client.post(
+        "/api/v1/obras/",
+        json={
+            "nome": "Obra Teste",
+            "valor_contrato": 100000.0,
+            "data_inicio": "2026-01-01",
+            "data_prevista_fim": "2026-12-31",
+        },
+    )
 
     assert resp.status_code == 201
     assert resp.json()["nome"] == "Obra Teste"
@@ -439,7 +497,9 @@ def test_listar_contratos(client_with_auth):
 
 def test_obter_contrato_found(client_with_auth):
     client, db = client_with_auth
-    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [CONTRATO_FIXTURE]
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+        CONTRATO_FIXTURE
+    ]
 
     resp = client.get("/api/v1/contratos/cont-1")
 
@@ -458,7 +518,9 @@ def test_obter_contrato_not_found(client_with_auth):
 
 def test_contratos_router_por_obra(client_with_auth):
     client, db = client_with_auth
-    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [CONTRATO_FIXTURE]
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+        CONTRATO_FIXTURE
+    ]
 
     resp = client.get("/api/v1/contratos/obra/obra-1")
 
@@ -466,6 +528,7 @@ def test_contratos_router_por_obra(client_with_auth):
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
+
 
 def test_resumo_dashboard(client_with_auth):
     client, db = client_with_auth
@@ -498,15 +561,35 @@ def test_ranking_eficiencia(client_with_auth):
     assert body[0]["id"] == "o1"
     assert body[0]["ieop_score"] == 95.0
     assert body[0]["ieop_classe"] == "Ótimo"
-    db.table.return_value.select.return_value.not_.is_.return_value.order.assert_called_with("ieop_score", desc=True)
+    db.table.return_value.select.return_value.not_.is_.return_value.order.assert_called_with(
+        "ieop_score", desc=True
+    )
 
 
 def test_ieop_stats(client_with_auth):
     client, db = client_with_auth
     db.table.return_value.select.return_value.not_.is_.return_value.execute.return_value.data = [
-        {"id": "o1", "nome": "Obra A", "secretaria": "Infra", "ieop_score": 90.0, "ieop_classe": "Ótimo"},
-        {"id": "o2", "nome": "Obra B", "secretaria": "Infra", "ieop_score": 50.0, "ieop_classe": "Regular"},
-        {"id": "o3", "nome": "Obra C", "secretaria": "Saúde", "ieop_score": 30.0, "ieop_classe": "Ruim"},
+        {
+            "id": "o1",
+            "nome": "Obra A",
+            "secretaria": "Infra",
+            "ieop_score": 90.0,
+            "ieop_classe": "Ótimo",
+        },
+        {
+            "id": "o2",
+            "nome": "Obra B",
+            "secretaria": "Infra",
+            "ieop_score": 50.0,
+            "ieop_classe": "Regular",
+        },
+        {
+            "id": "o3",
+            "nome": "Obra C",
+            "secretaria": "Saúde",
+            "ieop_score": 30.0,
+            "ieop_classe": "Ruim",
+        },
     ]
 
     resp = client.get("/api/v1/dashboard/ieop")
@@ -525,15 +608,32 @@ def test_ieop_stats(client_with_auth):
 
 # Linhas da tabela `obras` (nova fonte do dashboard)
 OBRAS_DASHBOARD_ROWS = [
-    {"situacao": "Em andamento", "valor_contrato": 100000.0, "percentual_executado": 50.0, "dias_atraso": 0},
-    {"situacao": "Concluída", "valor_contrato": 50000.0, "percentual_executado": 100.0, "dias_atraso": 0},
-    {"situacao": "Em andamento", "valor_contrato": 30000.0, "percentual_executado": 0.0, "dias_atraso": 10},
+    {
+        "situacao": "Em andamento",
+        "valor_contrato": 100000.0,
+        "percentual_executado": 50.0,
+        "dias_atraso": 0,
+    },
+    {
+        "situacao": "Concluída",
+        "valor_contrato": 50000.0,
+        "percentual_executado": 100.0,
+        "dias_atraso": 0,
+    },
+    {
+        "situacao": "Em andamento",
+        "valor_contrato": 30000.0,
+        "percentual_executado": 0.0,
+        "dias_atraso": 10,
+    },
 ]
 
 
 def test_metricas_globais(client_with_auth):
     client, db = client_with_auth
-    db.table.return_value.select.return_value.limit.return_value.execute.return_value.data = OBRAS_DASHBOARD_ROWS
+    db.table.return_value.select.return_value.limit.return_value.execute.return_value.data = (
+        OBRAS_DASHBOARD_ROWS
+    )
 
     resp = client.get("/api/v1/dashboard/")
 
@@ -651,8 +751,7 @@ def test_alertas(client_with_auth):
         "data_prevista_fim": "2026-03-01",
     }
     (
-        db.table.return_value.select.return_value
-        .in_.return_value.order.return_value.limit.return_value.execute.return_value.data
+        db.table.return_value.select.return_value.in_.return_value.order.return_value.limit.return_value.execute.return_value.data
     ) = [alerta]
 
     resp = client.get("/api/v1/dashboard/alertas")
@@ -664,8 +763,7 @@ def test_alertas(client_with_auth):
 def test_alertas_vazio(client_with_auth):
     client, db = client_with_auth
     (
-        db.table.return_value.select.return_value
-        .in_.return_value.order.return_value.limit.return_value.execute.return_value.data
+        db.table.return_value.select.return_value.in_.return_value.order.return_value.limit.return_value.execute.return_value.data
     ) = []
 
     resp = client.get("/api/v1/dashboard/alertas")
@@ -677,8 +775,7 @@ def test_alertas_vazio(client_with_auth):
 def test_alertas_limit(client_with_auth):
     client, db = client_with_auth
     (
-        db.table.return_value.select.return_value
-        .in_.return_value.order.return_value.limit.return_value.execute.return_value.data
+        db.table.return_value.select.return_value.in_.return_value.order.return_value.limit.return_value.execute.return_value.data
     ) = []
 
     resp = client.get("/api/v1/dashboard/alertas?limit=5")
@@ -769,7 +866,9 @@ def test_listar_fornecedores_paginacao(client_with_auth):
 
 def test_obter_fornecedor_found(client_with_auth):
     client, db = client_with_auth
-    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [FORNECEDOR_FIXTURE]
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+        FORNECEDOR_FIXTURE
+    ]
 
     resp = client.get("/api/v1/fornecedores/12345678000195")
 
@@ -820,11 +919,13 @@ def test_obras_do_fornecedor_vazio(client_with_auth):
 
 # ── Mapa ──────────────────────────────────────────────────────────────────────
 
+
 def test_obras_geolocalizadas(client_with_auth):
     client, db = client_with_auth
     geo_data = [{**OBRA_FIXTURE, "latitude": -22.37, "longitude": -41.78}]
-    (db.table.return_value.select.return_value
-     .not_.is_.return_value.not_.is_.return_value.execute.return_value.data) = geo_data
+    (
+        db.table.return_value.select.return_value.not_.is_.return_value.not_.is_.return_value.execute.return_value.data
+    ) = geo_data
 
     resp = client.get("/api/v1/mapa/obras")
 
@@ -832,6 +933,7 @@ def test_obras_geolocalizadas(client_with_auth):
 
 
 # ── ML ────────────────────────────────────────────────────────────────────────
+
 
 def test_disparar_analise(client_with_auth):
     client, _ = client_with_auth
@@ -934,7 +1036,9 @@ def _override_perfil(perfil: str):
     from app.routers.auth import get_current_user
 
     app.dependency_overrides[get_current_user] = lambda: {
-        "sub": "u", "email": "u@test.com", "perfil": perfil
+        "sub": "u",
+        "email": "u@test.com",
+        "perfil": perfil,
     }
 
 
@@ -958,13 +1062,17 @@ def test_reprocessar_gestor_403(client_with_auth):
 
 # ── IA ────────────────────────────────────────────────────────────────────────
 
+
 def test_consultar_ia(client_with_auth):
     from unittest.mock import AsyncMock
 
     client, _ = client_with_auth
-    with patch("app.routers.ia.consultar", new=AsyncMock(
-        return_value={"resposta": "A obra está dentro do prazo.", "modelo": "gemini-1.5-flash"}
-    )):
+    with patch(
+        "app.routers.ia.consultar",
+        new=AsyncMock(
+            return_value={"resposta": "A obra está dentro do prazo.", "modelo": "gemini-1.5-flash"}
+        ),
+    ):
         resp = client.post("/api/v1/ia/consulta", json={"pergunta": "Qual a eficiência da obra?"})
 
     assert resp.status_code == 200
@@ -986,9 +1094,10 @@ def test_consultar_ia_gestor_ok(client_with_auth):
 
     client, _ = client_with_auth
     _override_perfil("gestor")
-    with patch("app.routers.ia.consultar", new=AsyncMock(
-        return_value={"resposta": "ok", "modelo": "gemini-1.5-flash"}
-    )):
+    with patch(
+        "app.routers.ia.consultar",
+        new=AsyncMock(return_value={"resposta": "ok", "modelo": "gemini-1.5-flash"}),
+    ):
         resp = client.post("/api/v1/ia/consulta", json={"pergunta": "Pergunta do gestor?"})
 
     assert resp.status_code == 200
@@ -1021,8 +1130,10 @@ def test_consultar_ia_stream_readonly_403(client_with_auth):
 
 def test_gerar_embeddings(client_with_auth):
     client, _ = client_with_auth
-    with patch("app.routers.ia.acquire_lock", return_value=True), \
-         patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task:
+    with (
+        patch("app.routers.ia.acquire_lock", return_value=True),
+        patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task,
+    ):
         mock_task.delay.return_value.id = "emb-task-1"
 
         resp = client.post("/api/v1/ia/embeddings/gerar")
@@ -1037,8 +1148,10 @@ def test_gerar_embeddings(client_with_auth):
 
 def test_gerar_embeddings_forcar(client_with_auth):
     client, _ = client_with_auth
-    with patch("app.routers.ia.acquire_lock", return_value=True), \
-         patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task:
+    with (
+        patch("app.routers.ia.acquire_lock", return_value=True),
+        patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task,
+    ):
         mock_task.delay.return_value.id = "emb-task-2"
 
         resp = client.post("/api/v1/ia/embeddings/gerar?forcar=true")
@@ -1050,8 +1163,10 @@ def test_gerar_embeddings_forcar(client_with_auth):
 def test_gerar_embeddings_em_andamento_409(client_with_auth):
     client, _ = client_with_auth
     # lock já tomado -> não dispara e retorna 409
-    with patch("app.routers.ia.acquire_lock", return_value=False), \
-         patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task:
+    with (
+        patch("app.routers.ia.acquire_lock", return_value=False),
+        patch("app.tasks.embedding_tasks.task_gerar_embeddings") as mock_task,
+    ):
         resp = client.post("/api/v1/ia/embeddings/gerar")
 
     assert resp.status_code == 409

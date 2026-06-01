@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.database import check_connection, dispose_db_engine, init_db_engine
+from app.core.errors import register_error_handlers
 from app.routers import auth, contratos, dashboard, fornecedores, ia, mapa, ml, obras
 
 settings = get_settings()
@@ -58,13 +59,28 @@ Rotas sensíveis retornam **403** quando o perfil não tem permissão.
 
 tags_metadata = [
     {"name": "Auth", "description": "Cadastro, login, refresh e perfil do usuário (JWT)."},
-    {"name": "Obras", "description": "Listagem (filtros, período, sort, paginação), detalhe, contratos e aditivos."},
+    {
+        "name": "Obras",
+        "description": "Listagem (filtros, período, sort, paginação), detalhe, contratos e aditivos.",
+    },
     {"name": "Contratos", "description": "Consulta de contratos (lista, detalhe e por obra)."},
     {"name": "Fornecedores", "description": "Ranking de fornecedores e obras por CNPJ."},
-    {"name": "Mapa", "description": "Obras geolocalizadas em GeoJSON, com filtros e recorte por período."},
-    {"name": "Dashboard", "description": "Métricas agregadas (calculadas da tabela de obras) e distribuições."},
-    {"name": "ML", "description": "Predições de risco (XGBoost) e re-treino assíncrono — re-treino é admin."},
-    {"name": "IA", "description": "RAG (HuggingFace + Gemini) sobre contratos/obras — consulta é admin/gestor."},
+    {
+        "name": "Mapa",
+        "description": "Obras geolocalizadas em GeoJSON, com filtros e recorte por período.",
+    },
+    {
+        "name": "Dashboard",
+        "description": "Métricas agregadas (calculadas da tabela de obras) e distribuições.",
+    },
+    {
+        "name": "ML",
+        "description": "Predições de risco (XGBoost) e re-treino assíncrono — re-treino é admin.",
+    },
+    {
+        "name": "IA",
+        "description": "RAG (HuggingFace + Gemini) sobre contratos/obras — consulta é admin/gestor.",
+    },
     {"name": "Health", "description": "Verificação de saúde (Supabase e banco direto)."},
 ]
 
@@ -86,14 +102,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router,         prefix="/api/v1/auth",         tags=["Auth"])
-app.include_router(obras.router,        prefix="/api/v1/obras",        tags=["Obras"])
-app.include_router(contratos.router,    prefix="/api/v1/contratos",    tags=["Contratos"])
+register_error_handlers(app)
+
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
+app.include_router(obras.router, prefix="/api/v1/obras", tags=["Obras"])
+app.include_router(contratos.router, prefix="/api/v1/contratos", tags=["Contratos"])
 app.include_router(fornecedores.router, prefix="/api/v1/fornecedores", tags=["Fornecedores"])
-app.include_router(mapa.router,         prefix="/api/v1/mapa",         tags=["Mapa"])
-app.include_router(dashboard.router,    prefix="/api/v1/dashboard",    tags=["Dashboard"])
-app.include_router(ml.router,           prefix="/api/v1/ml",           tags=["ML"])
-app.include_router(ia.router,           prefix="/api/v1/ia",           tags=["IA"])
+app.include_router(mapa.router, prefix="/api/v1/mapa", tags=["Mapa"])
+app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
+app.include_router(ml.router, prefix="/api/v1/ml", tags=["ML"])
+app.include_router(ia.router, prefix="/api/v1/ia", tags=["IA"])
 
 
 @app.get("/health", tags=["Health"])
