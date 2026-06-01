@@ -180,12 +180,14 @@ autenticação).
 | `email` | string (email) | ✅ | E-mail do usuário. Validado como e-mail e deve ser único. |
 | `password` | string | ✅ | Senha em texto puro — convertida em hash bcrypt no servidor. |
 | `nome` | string | ✅ | Nome do usuário. |
+| `perfil` | `admin`\|`gestor`\|`readonly` | ⬜ | Perfil do usuário (default `readonly`). ⚠️ aceito no cadastro = **auto-atribuição** — proteja/gateie em produção. |
 
 ```json
 {
   "email": "joao@exemplo.com",
   "password": "senha-super-secreta",
-  "nome": "João Silva"
+  "nome": "João Silva",
+  "perfil": "gestor"
 }
 ```
 

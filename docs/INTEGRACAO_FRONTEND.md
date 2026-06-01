@@ -66,8 +66,11 @@ Cada um retorna `DistribuicaoItem[]`:
 ## Autenticação e perfis (atenção ao 403)
 - Toda rota de domínio exige **Bearer token** (`POST /api/v1/auth/login`).
 - **RAG** (`/api/v1/ia/consulta*`) exige perfil **admin** ou **gestor**; **readonly**
-  recebe **403**. Usuários criados por `/register` nascem `readonly`.
-- Para liberar um usuário de teste:
+  recebe **403**.
+- **`POST /register` aceita `perfil`** (`admin`|`gestor`|`readonly`, default `readonly`)
+  — o front pode enviar o perfil no cadastro. ⚠️ Isso permite auto-atribuição; em
+  produção, gateie esse fluxo (ex.: só admin cria usuários com perfil elevado).
+- Alternativa: promover via banco —
   ```sql
   UPDATE usuarios SET perfil = 'gestor' WHERE email = 'EMAIL_DO_USUARIO';
   ```

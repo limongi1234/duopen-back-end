@@ -1,6 +1,8 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, EmailStr
+
+Perfil = Literal["admin", "gestor", "readonly"]
 
 
 class LoginRequest(BaseModel):
@@ -22,6 +24,9 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     nome: str
+    # ⚠️ Aceitar perfil no cadastro permite auto-atribuição (escalonamento).
+    # Validado contra os valores permitidos; default = menor privilégio.
+    perfil: Perfil = "readonly"
 
 
 class UserResponse(BaseModel):

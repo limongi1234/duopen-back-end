@@ -52,8 +52,8 @@ async def register(body: UserCreate, db: Client = Depends(get_supabase_client)):
             "email": body.email,
             "senha_hash": hash_password(body.password),
             "nome": body.nome,
-            # Menor privilégio por padrão; admin/gestor são definidos no banco.
-            "perfil": "readonly",
+            # Perfil informado no cadastro (default readonly). Validado no schema.
+            "perfil": body.perfil,
         }).execute(),
         "insert user",
     )
@@ -71,7 +71,7 @@ async def register(body: UserCreate, db: Client = Depends(get_supabase_client)):
         id=user["id"],
         email=user["email"],
         nome=user["nome"],
-        perfil=user.get("perfil", "readonly"),
+        perfil=user.get("perfil", body.perfil),
     )
 
 

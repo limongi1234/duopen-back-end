@@ -71,10 +71,35 @@ def test_register_success(auth_client):
 
     assert resp.status_code == 201
     assert resp.json()["email"] == "novo@test.com"
-    # novo usuário nasce com menor privilégio
+    # sem perfil no corpo -> default menor privilégio
     assert resp.json()["perfil"] == "readonly"
-    # perfil enviado ao insert é readonly (não aceita escalada via body)
     assert db.table.return_value.insert.call_args[0][0]["perfil"] == "readonly"
+
+
+def test_register_com_perfil(auth_client):
+    client, db = auth_client
+    db.table.return_value.select.return_value.eq.return_value.execute.return_value = _ok_result([])
+    db.table.return_value.insert.return_value.execute.return_value = _ok_result([
+        {"id": "uid-1", "email": "g@test.com", "nome": "Gestor", "perfil": "gestor"}
+    ])
+
+    resp = client.post("/api/v1/auth/register", json={
+        "email": "g@test.com", "password": "senha123", "nome": "Gestor", "perfil": "gestor"
+    })
+
+    assert resp.status_code == 201
+    assert resp.json()["perfil"] == "gestor"
+    assert db.table.return_value.insert.call_args[0][0]["perfil"] == "gestor"
+
+
+def test_register_perfil_invalido_422(auth_client):
+    client, _ = auth_client
+
+    resp = client.post("/api/v1/auth/register", json={
+        "email": "x@test.com", "password": "senha123", "nome": "X", "perfil": "superadmin"
+    })
+
+    assert resp.status_code == 422
 
 
 def test_register_email_exists(auth_client):
