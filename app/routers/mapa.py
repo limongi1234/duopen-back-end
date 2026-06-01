@@ -67,14 +67,18 @@ async def obras_geojson(
 
     result = query.execute()
 
-    # IEOP não está na mv_mapa_obras; buscamos na tabela `obras` pelos ids retornados.
-    ieop_by_id: dict[str, Mapping[str, Any]] = {}
+    # secretaria e IEOP não estão na mv_mapa_obras; buscamos na tabela `obras`
+    # pelos ids retornados (a view não expõe esses campos).
+    obras_by_id: dict[str, Mapping[str, Any]] = {}
     ids = [str(cast(Mapping[str, Any], o)["id"]) for o in result.data or []]
     if ids:
-        ieop_rows = rows(
-            db.table("obras").select("id, ieop_score, ieop_classe").in_("id", ids).execute()
+        extra_rows = rows(
+            db.table("obras")
+            .select("id, secretaria, ieop_score, ieop_classe")
+            .in_("id", ids)
+            .execute()
         )
-        ieop_by_id = {str(r["id"]): r for r in ieop_rows}
+        obras_by_id = {str(r["id"]): r for r in extra_rows}
 
     features = []
     for o in result.data or []:
@@ -83,11 +87,12 @@ async def obras_geojson(
             continue
         nivel = row.get("nivel_risco")
         bairro = row.get("bairro")
-        ieop = ieop_by_id.get(str(row["id"]), {})
+        extra = obras_by_id.get(str(row["id"]), {})
         pct = row.get("percentual_executado")
         prob = row.get("prob_atraso")
-        ieop_score = ieop.get("ieop_score")
-        ieop_classe = ieop.get("ieop_classe")
+        sec = extra.get("secretaria") or secretaria
+        ieop_score = extra.get("ieop_score")
+        ieop_classe = extra.get("ieop_classe")
 
         features.append(
             GeoJSONFeature(
@@ -99,8 +104,8 @@ async def obras_geojson(
                     nome=str(row["nome"]),
                     status=str(row.get("situacao") or "Indefinido"),
                     nivel_risco=str(nivel) if nivel is not None else None,
-                    # Não está na view; ecoa o filtro quando informado.
-                    secretaria=secretaria,
+                    # Vem da tabela `obras` (a view não tem); fallback p/ o filtro.
+                    secretaria=str(sec) if sec is not None else None,
                     bairro=str(bairro) if bairro is not None else None,
                     valor_contrato=float(row.get("valor_contrato") or 0),
                     percentual_executado=float(pct) if pct is not None else None,
