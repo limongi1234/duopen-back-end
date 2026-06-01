@@ -89,6 +89,36 @@ def test_painel_fornecedores_vazio_retorna_lista_vazia():
     assert rag._painel_fornecedores(client) == []
 
 
+def test_painel_contratos_conta_situacao_e_ranqueia_vigentes():
+    client = MagicMock()
+    contratos_tbl = MagicMock()
+    contratos_tbl.select.return_value.execute.return_value.data = [
+        {"id_fornecedor": "f1", "situacao": "Vigente"},
+        {"id_fornecedor": "f1", "situacao": "Vigente"},
+        {"id_fornecedor": "f2", "situacao": "Vigente"},
+        {"id_fornecedor": "f2", "situacao": "Expirado"},
+        {"id_fornecedor": None, "situacao": "Indefinido"},
+    ]
+    forn_tbl = MagicMock()
+    forn_tbl.select.return_value.in_.return_value.execute.return_value.data = [
+        {"id": "f1", "razao_social": "Construtora Alfa"},
+        {"id": "f2", "razao_social": "Beta Eng"},
+    ]
+    client.table.side_effect = lambda nome: {
+        "contratos": contratos_tbl,
+        "fornecedores": forn_tbl,
+    }[nome]
+
+    texto = "\n".join(rag._painel_contratos(client))
+
+    assert "Total de contratos cadastrados: 5." in texto
+    assert "Vigente: 3" in texto
+    assert "Expirado: 1" in texto
+    # f1 (2 vigentes) deve aparecer antes de f2 (1 vigente)
+    assert texto.index("Construtora Alfa") < texto.index("Beta Eng")
+    assert "2 contratos vigentes" in texto
+
+
 def test_painel_obras_conta_situacao_e_ordena_risco():
     client = MagicMock()
     client.table.return_value.select.return_value.execute.return_value.data = [

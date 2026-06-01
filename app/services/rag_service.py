@@ -20,6 +20,10 @@ MATCH_FUNCTION = "match_documentos"
 # contratos", "obras de maior risco"); o painel injeta esses dados já calculados.
 PAINEL_TOP_FORNECEDORES = 10
 PAINEL_TOP_OBRAS_RISCO = 8
+PAINEL_TOP_FORNECEDORES_VIGENTES = 5
+
+# Situação de contrato que representa "em andamento" no schema (vs. Expirado/Indefinido).
+SITUACAO_CONTRATO_VIGENTE = "Vigente"
 
 # ── Singletons — inicializados uma vez (evita recarregar o modelo ~420MB) ──────
 _embeddings: HuggingFaceEmbeddings | None = None
@@ -94,6 +98,54 @@ def _painel_fornecedores(client: Any) -> list[str]:
     return [cabecalho] + [_linha_fornecedor(i, f) for i, f in enumerate(linhas, 1)]
 
 
+def _nomes_fornecedores(client: Any, ids: list[str]) -> dict[str, str]:
+    """Resolve `id_fornecedor -> razão social` para os ids informados."""
+    if not ids:
+        return {}
+    linhas = rows(client.table("fornecedores").select("*").in_("id", ids).execute())
+    return {
+        f["id"]: (f.get("razao_social") or f.get("nome") or "(sem nome)")
+        for f in linhas
+        if f.get("id")
+    }
+
+
+def _painel_contratos(client: Any) -> list[str]:
+    """Totais de contratos por situação + ranking de fornecedores com mais contratos
+    vigentes (em andamento) — responde perguntas que dependem da situação do contrato,
+    dimensão ausente do ranking pré-agregado de fornecedores."""
+    contratos = rows(client.table("contratos").select("id_fornecedor,situacao").execute())
+    if not contratos:
+        return []
+
+    por_situacao: dict[str, int] = {}
+    vigentes_por_forn: dict[str, int] = {}
+    for ct in contratos:
+        situacao = ct.get("situacao") or "não informada"
+        por_situacao[situacao] = por_situacao.get(situacao, 0) + 1
+        if situacao == SITUACAO_CONTRATO_VIGENTE and ct.get("id_fornecedor"):
+            fid = ct["id_fornecedor"]
+            vigentes_por_forn[fid] = vigentes_por_forn.get(fid, 0) + 1
+
+    blocos = [
+        f"Total de contratos cadastrados: {len(contratos)}.",
+        "Contratos por situação: "
+        + "; ".join(f"{s}: {n}" for s, n in sorted(por_situacao.items())),
+    ]
+
+    if vigentes_por_forn:
+        top = sorted(vigentes_por_forn.items(), key=lambda kv: kv[1], reverse=True)[
+            :PAINEL_TOP_FORNECEDORES_VIGENTES
+        ]
+        nomes = _nomes_fornecedores(client, [fid for fid, _ in top])
+        blocos.append(f"Fornecedores com mais contratos vigentes/em andamento (top {len(top)}):")
+        blocos += [
+            f"{i}. {nomes.get(fid, '(sem nome)')} — {qtd} contratos vigentes"
+            for i, (fid, qtd) in enumerate(top, 1)
+        ]
+    return blocos
+
+
 def _painel_obras(client: Any) -> list[str]:
     linhas = rows(
         client.table("mv_obras_resumo")
@@ -134,7 +186,7 @@ def carregar_painel(client: Any) -> str:
     independente: se uma view materializada estiver stale/indisponível, segue sem
     ela em vez de derrubar a consulta inteira."""
     blocos: list[str] = []
-    for montar in (_painel_fornecedores, _painel_obras):
+    for montar in (_painel_fornecedores, _painel_contratos, _painel_obras):
         try:
             blocos += montar(client)
         except APIError as exc:
