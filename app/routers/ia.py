@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.config import get_settings
 from app.core.locks import acquire_lock, release_lock
 from app.routers.auth import get_current_user, require_perfil
-from app.services.rag_service import consultar, consultar_stream, get_embeddings
+from app.services.rag_service import consultar, consultar_stream
 from app.tasks.embedding_tasks import EMBEDDINGS_LOCK_KEY, EMBEDDINGS_LOCK_TTL
 
 router = APIRouter()
@@ -22,8 +23,12 @@ class ConsultaRequest(BaseModel):
 
 
 class ConsultaResponse(BaseModel):
-    resposta: str = Field(..., description="Resposta gerada pelo LLM com base nos documentos recuperados.")
-    modelo: Optional[str] = Field(None, description="Modelo usado (None em caso de fallback por erro).")
+    resposta: str = Field(
+        ..., description="Resposta gerada pelo LLM com base nos documentos recuperados."
+    )
+    modelo: Optional[str] = Field(
+        None, description="Modelo usado (None em caso de fallback por erro)."
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -117,11 +122,19 @@ async def get_consulta_stream(
         202: {"description": "Indexação enfileirada."},
         403: {
             "description": "Perfil sem permissão (apenas admin).",
-            "content": {"application/json": {"example": {"detail": "Seu perfil não tem permissão para esta ação"}}},
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Seu perfil não tem permissão para esta ação"}
+                }
+            },
         },
         409: {
             "description": "Já existe uma indexação em andamento.",
-            "content": {"application/json": {"example": {"detail": "Já existe uma indexação de embeddings em andamento."}}},
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Já existe uma indexação de embeddings em andamento."}
+                }
+            },
         },
     },
 )
@@ -169,9 +182,10 @@ async def post_gerar_embeddings(
 @router.get(
     "/warmup",
     response_model=WarmupResponse,
-    summary="Pré-aquecer o modelo de embedding",
-    description="Carrega o modelo HF (~420MB) em memória, evitando ~30s na 1ª consulta. Requer autenticação.",
+    summary="Conferir o provedor de embeddings",
+    description="Confirma o modelo de embedding configurado. Embeddings são via API "
+    "do Gemini (sem modelo local), então não há mais carga pesada a pré-aquecer. "
+    "Mantido por compatibilidade. Requer autenticação.",
 )
 async def get_warmup(_: dict = Depends(get_current_user)):
-    get_embeddings()
-    return {"status": "ok", "modelo": get_embeddings().model_name}
+    return {"status": "ok", "modelo": get_settings().embedding_model}

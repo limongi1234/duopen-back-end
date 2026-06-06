@@ -8,32 +8,9 @@ import app.services.rag_service as rag
 
 @pytest.fixture(autouse=True)
 def reset_singletons():
-    rag._embeddings = None
     rag._llm = None
     yield
-    rag._embeddings = None
     rag._llm = None
-
-
-def test_get_embeddings_retorna_singleton():
-    with patch("app.services.rag_service.HuggingFaceEmbeddings") as mock_hf:
-        mock_hf.return_value = MagicMock()
-        a = rag.get_embeddings()
-        b = rag.get_embeddings()
-
-    assert a is b
-    mock_hf.assert_called_once()
-
-
-def test_get_embeddings_dimensao_384():
-    with patch("app.services.rag_service.HuggingFaceEmbeddings") as mock_hf:
-        inst = MagicMock()
-        inst.embed_query.return_value = [0.0] * 384
-        mock_hf.return_value = inst
-        emb = rag.get_embeddings()
-
-    assert mock_hf.call_args.kwargs["model_name"] == "paraphrase-multilingual-MiniLM-L12-v2"
-    assert len(emb.embed_query("teste")) == 384
 
 
 def test_formatar_contexto_separa_com_separador():
@@ -42,14 +19,12 @@ def test_formatar_contexto_separa_com_separador():
 
 
 def test_buscar_documentos_chama_rpc():
-    fake_emb = MagicMock()
-    fake_emb.embed_query.return_value = [0.1] * 384
     client = MagicMock()
     client.rpc.return_value.execute.return_value.data = [
         {"content": "trecho", "metadata": {"id_contrato": "c1"}, "similarity": 0.9}
     ]
     with (
-        patch("app.services.rag_service.get_embeddings", return_value=fake_emb),
+        patch("app.services.rag_service.embed_pergunta", return_value=[0.1] * 384),
         patch("app.services.rag_service.get_supabase_client", return_value=client),
     ):
         docs = rag.buscar_documentos("pergunta?", 5)

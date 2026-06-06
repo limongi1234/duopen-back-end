@@ -4,7 +4,7 @@
 --
 -- Pré-requisitos:
 --   * extensão pgvector habilitada:           CREATE EXTENSION IF NOT EXISTS vector;
---   * tabela embeddings.vetor como VECTOR(384) (modelo HF MiniLM, 384 dims)
+--   * tabela embeddings.vetor como VECTOR(384) (gemini-embedding-001 truncado a 384 dims)
 --   * tabela documentos_rag(id, chunk_texto, metadata, id_contrato, ...)
 --
 -- IMPORTANTE: o LangChain SupabaseVectorStore espera as colunas de retorno
@@ -12,7 +12,7 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- PASSO 0 · Alinhar a dimensão do vetor para 384 (stack gratuita HF MiniLM)
+-- PASSO 0 · Alinhar a dimensão do vetor para 384 (embeddings Gemini truncados)
 -- O banco veio com VECTOR(1536) (setup OpenAI original). Como a tabela está
 -- vazia, dá para alterar com segurança. Se houver índice na coluna, derrube antes.
 -- ─────────────────────────────────────────────────────────────────────────────

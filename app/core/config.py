@@ -5,9 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env", case_sensitive=False, extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
     supabase_url: str
     supabase_key: str
@@ -21,16 +19,14 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
 
-    # ── IA / RAG (stack gratuita: HuggingFace local + Gemini) ──────────────────
-    # Embeddings locais (384 dims) — casa com VECTOR(384) da tabela `embeddings`.
-    embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
+    # ── IA / RAG (stack gratuita: embeddings + LLM via API Gemini) ─────────────
+    # Embeddings via API do Gemini, truncados para 384 dims (output_dimensionality)
+    # — casa com VECTOR(384) da tabela `embeddings`, sem modelo local/torch.
+    embedding_model: str = "models/gemini-embedding-001"
     google_api_key: Optional[str] = None
     llm_model: str = "gemini-2.5-flash-lite"
     rag_top_k: int = 5
     rag_temperature: float = 0.3
-    # Cache do modelo HF. None = cache padrão (~/.cache/huggingface).
-    # No Railway, aponte para um volume persistente (ex.: /app/.cache/huggingface).
-    hf_cache_folder: Optional[str] = None
 
     # Mantido opcional para compatibilidade; a stack de IA não usa mais OpenAI.
     openai_api_key: Optional[str] = None

@@ -47,7 +47,7 @@ app/
 
 - Python **3.11+**
 - Conta/projeto **Supabase** (`SUPABASE_URL`, `SUPABASE_KEY`)
-- `OPENAI_API_KEY` (para embeddings / RAG)
+- `GOOGLE_API_KEY` (embeddings + LLM via API Gemini — RAG)
 - **Redis** (apenas para os jobs Celery — opcional para subir só a API)
 
 ## Configuração
@@ -73,8 +73,8 @@ app/
    | `SECRET_KEY` | ✅ | Segredo do JWT (mín. 32 caracteres) |
    | `DATABASE_URL` | ⬜ | Conexão **Postgres direta** via SQLAlchemy (`postgresql+asyncpg://...`). **≠ SUPABASE_URL** — é a string de conexão do banco, usada só no check do `/health`. Sem ela, o app funciona via REST. |
    | `GOOGLE_API_KEY` | ⬜* | Chave do Gemini (AI Studio). *Obrigatória só para o RAG (`/api/v1/ia/*`). |
-   | `LLM_MODEL` / `EMBEDDING_MODEL` | ⬜ | Modelo do Gemini / modelo de embeddings HF (têm default) |
-   | `RAG_TOP_K` / `RAG_TEMPERATURE` / `HF_CACHE_FOLDER` | ⬜ | Ajustes do RAG |
+   | `LLM_MODEL` / `EMBEDDING_MODEL` | ⬜ | Modelo do LLM / de embeddings do Gemini (têm default; embeddings via API, 384 dims) |
+   | `RAG_TOP_K` / `RAG_TEMPERATURE` | ⬜ | Ajustes do RAG |
    | `REDIS_URL` | ⬜ | Broker do Celery (default `redis://localhost:6379/0`) |
    | `ALGORITHM` / `ACCESS_TOKEN_EXPIRE` / `REFRESH_TOKEN_EXPIRE` | ⬜ | JWT (têm default) |
    | `LOG_LEVEL` / `ENVIRONMENT` / `CORS_ORIGINS` | ⬜ | Configuração da aplicação |
@@ -92,7 +92,7 @@ Pré-requisito: **Python 3.11+** e **internet** (a app fala com o Supabase na nu
 não precisa de Postgres local).
 
 ```bash
-# 1. Ambiente virtual + dependências (puxa torch/sentence-transformers, ~1GB)
+# 1. Ambiente virtual + dependências (leve — sem torch; embeddings via API Gemini)
 python -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
@@ -119,7 +119,7 @@ o **worker Celery** e a **API** juntos — útil para exercitar os jobs assíncr
 | Rodar **testes** | venv + deps + `.env` (SUPABASE_*, SECRET_KEY) |
 | Subir a **API** (obras/dashboard/mapa/auth) | idem + internet/Supabase |
 | **Jobs** (ML / embeddings) | + Redis + worker Celery (ou `run_local.sh`) |
-| **RAG / consulta IA** | + `GOOGLE_API_KEY` (modelo HF baixa no 1º uso, ~420MB) |
+| **RAG / consulta IA** | + `GOOGLE_API_KEY` (embeddings e LLM via API Gemini) |
 
 ---
 
@@ -278,8 +278,9 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 
 ### IA / RAG — `/api/v1/ia`
 Agente de IA generativa com RAG (LangChain + pgvector/Supabase) sobre contratos e obras.
-**Stack gratuita:** embeddings locais HuggingFace `paraphrase-multilingual-MiniLM-L12-v2`
-(384 dims) + LLM **Gemini 1.5 Flash** (Google AI Studio).
+**Stack gratuita (tudo via API Gemini):** embeddings `gemini-embedding-001` truncados
+para 384 dims (`output_dimensionality`, casa com `VECTOR(384)`) + LLM **Gemini** (Google
+AI Studio). Sem modelo local/torch — roda leve em hospedagem gratuita.
 
 **Contexto enviado ao LLM** (em `rag_service.montar_contexto`): além dos trechos
 recuperados por similaridade, cada consulta inclui um **painel de dados agregados**
@@ -294,7 +295,7 @@ indisponível.
 | POST | `/consulta` | admin, gestor | Consulta em linguagem natural → `{"resposta", "modelo"}` |
 | GET | `/consulta/stream` | admin, gestor | Mesma consulta com streaming SSE (`?pergunta=...`) |
 | POST | `/embeddings/gerar` | admin | Enfileira a indexação dos contratos (enriquecidos com fornecedor + contexto da obra). **202** com `task_id` + `status_url`; `?forcar=true` recria tudo; **409** se já houver indexação em andamento |
-| GET | `/warmup` | autenticado | Pré-aquece o modelo de embedding (~420MB) |
+| GET | `/warmup` | autenticado | Confirma o modelo de embedding configurado (mantido por compatibilidade; embeddings via API, sem carga local) |
 
 **Pré-requisitos para rodar o RAG:**
 1. `GOOGLE_API_KEY` no `.env` (gere em [aistudio.google.com](https://aistudio.google.com)).
@@ -385,4 +386,4 @@ worker: celery -A app.tasks.celery_app worker --loglevel=info
    `web`) e um **worker** (start command do `worker`). Ambos compartilham a
    mesma imagem Docker.
 3. Configure as variáveis de ambiente (`SUPABASE_*`, `DATABASE_URL`,
-   `SECRET_KEY`, `OPENAI_API_KEY`, etc.) em ambos os serviços.
+   `SECRET_KEY`, `GOOGLE_API_KEY`, etc.) em ambos os serviços.
