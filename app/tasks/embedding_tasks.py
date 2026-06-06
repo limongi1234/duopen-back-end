@@ -1,4 +1,6 @@
 import logging
+import re
+import time
 from typing import Any, Optional
 
 from celery.exceptions import MaxRetriesExceededError
@@ -7,6 +9,7 @@ from postgrest.exceptions import APIError
 from app.core.config import get_settings
 from app.core.database import first, get_supabase_client, rows
 from app.core.locks import release_lock
+from app.services.embeddings import embed_documentos
 from app.tasks.celery_app import backoff_countdown, celery_app
 
 log = logging.getLogger("tasks.embedding")
@@ -14,6 +17,43 @@ log = logging.getLogger("tasks.embedding")
 CHUNK_SIZE = 512  # caracteres por chunk
 CHUNK_OVERLAP = 50  # sobreposição entre chunks
 _UUID_ZERO = "00000000-0000-0000-0000-000000000000"  # filtro "match-all" para delete
+
+# Embeddings via API têm cota grátis de 100 req/min. Em vez de quebrar o re-index,
+# recuamos no 429 e retomamos — respeitando o atraso sugerido pela própria API.
+RATE_LIMIT_ESPERA_PADRAO_S = 30.0
+EMBED_MAX_TENTATIVAS = 6
+_RE_RETRY = re.compile(r"retry in ([0-9.]+)s")
+
+
+def _e_rate_limit(exc: Exception) -> bool:
+    txt = str(exc)
+    return "429" in txt or "RESOURCE_EXHAUSTED" in txt
+
+
+def _espera_sugerida(exc: Exception) -> float:
+    """Atraso sugerido pela API (+1s de margem); cai no padrão se não houver dica."""
+    m = _RE_RETRY.search(str(exc))
+    return float(m.group(1)) + 1 if m else RATE_LIMIT_ESPERA_PADRAO_S
+
+
+def _embed_chunks(chunks: list[str]) -> list[list[float]]:
+    """Embeda uma leva de chunks com recuo em caso de rate limit (cota grátis)."""
+    for tentativa in range(EMBED_MAX_TENTATIVAS):
+        try:
+            return embed_documentos(chunks)
+        except Exception as exc:
+            if not _e_rate_limit(exc) or tentativa == EMBED_MAX_TENTATIVAS - 1:
+                raise
+            espera = _espera_sugerida(exc)
+            log.warning(
+                "Rate limit do Gemini; aguardando %.0fs (tentativa %d/%d)",
+                espera,
+                tentativa + 1,
+                EMBED_MAX_TENTATIVAS,
+            )
+            time.sleep(espera)
+    raise RuntimeError("inalcançável")  # pragma: no cover
+
 
 # Lock distribuído que serializa a indexação (adquirido no endpoint, liberado aqui).
 EMBEDDINGS_LOCK_KEY = "duopen:lock:embeddings"
@@ -113,16 +153,13 @@ def task_gerar_embeddings(self, forcar: bool = False) -> dict:
             embedding. Quando False (padrão), é incremental: só indexa contratos
             ainda não presentes em `documentos_rag`.
 
-    Modelo: paraphrase-multilingual-MiniLM-L12-v2 (384 dims).
+    Modelo: gemini-embedding-001 via API (384 dims, output_dimensionality).
     """
     try:
-        # Imports pesados (torch/transformers) ficam locais para não onerar o import do módulo.
         from langchain_text_splitters import RecursiveCharacterTextSplitter
-        from sentence_transformers import SentenceTransformer
 
         settings = get_settings()
         client = get_supabase_client()
-        model = SentenceTransformer(settings.embedding_model)
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
         )
@@ -161,7 +198,13 @@ def task_gerar_embeddings(self, forcar: bool = False) -> dict:
                 continue
 
             metadata = _metadata(contrato, obra, fornecedor)
-            for chunk in splitter.split_text(texto):
+            chunks = splitter.split_text(texto)
+            if not chunks:
+                continue
+            # Embeda todos os chunks do contrato numa só chamada à API (menos
+            # requisições -> menor risco de rate limit), com recuo no 429.
+            vetores = _embed_chunks(chunks)
+            for chunk, vetor in zip(chunks, vetores, strict=True):
                 doc = first(
                     client.table("documentos_rag")
                     .insert(
@@ -176,11 +219,9 @@ def task_gerar_embeddings(self, forcar: bool = False) -> dict:
                 )
                 if doc is None:
                     continue
-                doc_id = doc["id"]
-                vetor = model.encode(chunk, normalize_embeddings=True).tolist()
                 client.table("embeddings").insert(
                     {
-                        "id_documento": doc_id,
+                        "id_documento": doc["id"],
                         "vetor": _vetor_para_pgvector(vetor),
                         "modelo": settings.embedding_model,
                     }

@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock
 
+import pytest
+
 
 def test_backoff_countdown_exponencial():
     from app.tasks.celery_app import RETRY_BACKOFF_MAX, backoff_countdown
@@ -47,6 +49,53 @@ def test_run_ml_analysis_retries_on_error():
         ml_module.log = original_log
 
     mock_log.error.assert_called_once()
+
+
+def test_e_rate_limit_reconhece_429():
+    import app.tasks.embedding_tasks as emb
+
+    assert emb._e_rate_limit(Exception("429 RESOURCE_EXHAUSTED ... limit: 100"))
+    assert emb._e_rate_limit(Exception("RESOURCE_EXHAUSTED"))
+    assert not emb._e_rate_limit(Exception("400 INVALID_ARGUMENT"))
+
+
+def test_espera_sugerida_extrai_da_mensagem():
+    import app.tasks.embedding_tasks as emb
+
+    # usa o atraso sugerido pela API quando presente (+1s de margem)
+    assert emb._espera_sugerida(Exception("Please retry in 26.27s.")) == pytest.approx(27.27)
+    # cai no padrão quando a mensagem não traz o atraso
+    assert emb._espera_sugerida(Exception("sem dica")) == emb.RATE_LIMIT_ESPERA_PADRAO_S
+
+
+def test_embed_chunks_recua_no_rate_limit_e_retoma():
+    from unittest.mock import patch
+
+    import app.tasks.embedding_tasks as emb
+
+    erro = Exception("429 RESOURCE_EXHAUSTED. Please retry in 5s.")
+    # falha 1x por rate limit, depois passa
+    fake = MagicMock(side_effect=[erro, [[0.1] * 384]])
+    sleeps = []
+    with (
+        patch("app.tasks.embedding_tasks.embed_documentos", fake),
+        patch("app.tasks.embedding_tasks.time.sleep", side_effect=sleeps.append),
+    ):
+        out = emb._embed_chunks(["chunk"])
+
+    assert out == [[0.1] * 384]
+    assert fake.call_count == 2  # tentou de novo após o recuo
+    assert sleeps == [pytest.approx(6.0)]  # aguardou ~5s sugeridos + margem
+
+
+def test_embed_chunks_propaga_erro_nao_rate_limit():
+    from unittest.mock import patch
+
+    import app.tasks.embedding_tasks as emb
+
+    with patch("app.tasks.embedding_tasks.embed_documentos", side_effect=ValueError("boom")):
+        with pytest.raises(ValueError):
+            emb._embed_chunks(["chunk"])
 
 
 def test_task_gerar_embeddings_enriquece_com_obra():
@@ -97,8 +146,6 @@ def test_task_gerar_embeddings_enriquece_com_obra():
         "embeddings": emb_tbl,
     }[name]
 
-    model = MagicMock()
-    model.encode.return_value.tolist.return_value = [0.1] * 384
     captured = {}
 
     def fake_split(texto):
@@ -111,7 +158,7 @@ def test_task_gerar_embeddings_enriquece_com_obra():
     with (
         patch("app.tasks.embedding_tasks.get_supabase_client", return_value=client),
         patch("app.tasks.embedding_tasks.release_lock") as mock_release,
-        patch("sentence_transformers.SentenceTransformer", return_value=model),
+        patch("app.tasks.embedding_tasks.embed_documentos", return_value=[[0.1] * 384]),
         patch("langchain_text_splitters.RecursiveCharacterTextSplitter", return_value=splitter),
     ):
         result = emb.task_gerar_embeddings()
@@ -173,15 +220,13 @@ def test_task_gerar_embeddings_forcar_recria_indice():
         "embeddings": emb_tbl,
     }[name]
 
-    model = MagicMock()
-    model.encode.return_value.tolist.return_value = [0.1] * 384
     splitter = MagicMock()
     splitter.split_text.return_value = ["chunk1"]
 
     with (
         patch("app.tasks.embedding_tasks.get_supabase_client", return_value=client),
         patch("app.tasks.embedding_tasks.release_lock") as mock_release,
-        patch("sentence_transformers.SentenceTransformer", return_value=model),
+        patch("app.tasks.embedding_tasks.embed_documentos", return_value=[[0.1] * 384]),
         patch("langchain_text_splitters.RecursiveCharacterTextSplitter", return_value=splitter),
     ):
         result = emb.task_gerar_embeddings(forcar=True)

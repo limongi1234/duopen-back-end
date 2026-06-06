@@ -13,12 +13,12 @@ asyncpg>=0.29
 python-jose[cryptography]>=3.3
 passlib[bcrypt]>=1.7
 
-# IA Generativa e RAG (stack gratuita: HuggingFace local + Gemini)
+# IA Generativa e RAG (stack gratuita: embeddings + LLM via API Gemini)
+# Embeddings via API (output_dimensionality=384) — sem torch/modelo local.
 langchain>=0.2
 langchain-community>=0.2
-langchain-google-genai>=1.0
-langchain-huggingface>=0.1
-sentence-transformers>=3.0
+langchain-google-genai>=2.0
+langchain-text-splitters>=0.2
 pgvector>=0.3
 psycopg2-binary>=2.9
 

@@ -4,11 +4,11 @@ from typing import Any, AsyncGenerator
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_huggingface import HuggingFaceEmbeddings
 from postgrest.exceptions import APIError
 
 from app.core.config import get_settings
 from app.core.database import get_supabase_client, rows
+from app.services.embeddings import embed_pergunta
 
 log = logging.getLogger("services.rag")
 
@@ -29,22 +29,9 @@ PAINEL_OBRA_NOME_MAX = 80
 # Situação de contrato que representa "em andamento" no schema (vs. Expirado/Indefinido).
 SITUACAO_CONTRATO_VIGENTE = "Vigente"
 
-# ── Singletons — inicializados uma vez (evita recarregar o modelo ~420MB) ──────
-_embeddings: HuggingFaceEmbeddings | None = None
+# ── Singleton do LLM — inicializado uma vez. Os embeddings vivem em
+# app.services.embeddings (Gemini), compartilhados com a indexação. ────────────
 _llm: ChatGoogleGenerativeAI | None = None
-
-
-def get_embeddings() -> HuggingFaceEmbeddings:
-    global _embeddings
-    if _embeddings is None:
-        settings = get_settings()
-        _embeddings = HuggingFaceEmbeddings(
-            model_name=settings.embedding_model,
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},
-            cache_folder=settings.hf_cache_folder,
-        )
-    return _embeddings
 
 
 def get_llm() -> ChatGoogleGenerativeAI:
@@ -63,7 +50,7 @@ def get_llm() -> ChatGoogleGenerativeAI:
 def buscar_documentos(pergunta: str, top_k: int, client: Any | None = None) -> list[dict[str, Any]]:
     """Busca semântica via RPC pgvector (evita o SupabaseVectorStore, incompatível
     com a versão atual do postgrest). Retorna linhas {content, metadata, similarity}."""
-    vetor = get_embeddings().embed_query(pergunta)
+    vetor = embed_pergunta(pergunta)
     client = client or get_supabase_client()
     result = client.rpc(MATCH_FUNCTION, {"query_embedding": vetor, "match_count": top_k}).execute()
     return rows(result)
